@@ -40,4 +40,49 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_exe_unit_tests.step);
+
+    var shader_dir = std.fs.cwd().openDir("./src/shaders/", .{ .iterate = true }) catch unreachable;
+    defer shader_dir.close();
+
+    shader_dir.makeDir("compiled") catch |err| switch (err) {
+        error.PathAlreadyExists => {},
+        else => unreachable,
+    };
+
+    var iterator = shader_dir.iterate();
+
+    var compile_steps = std.ArrayList(*std.Build.Step).init(b.allocator);
+
+    while (iterator.next() catch unreachable) |entry| {
+        if (entry.kind == .directory) continue;
+
+        const path = std.fmt.allocPrint(
+            b.allocator,
+            "src/shaders/{s}",
+            .{entry.name},
+        ) catch unreachable;
+
+        const new_name = std.fmt.allocPrint(
+            b.allocator,
+            "src/shaders/compiled/{s}.zig",
+            .{entry.name},
+        ) catch unreachable;
+
+        const cmd = b.addSystemCommand(&[_][]const u8{
+            "./sokol-tools/sokol-tools/zig-out/bin/sokol-shdc",
+            "-i",
+            path,
+            "-o",
+            new_name,
+            "-l",
+            "hlsl5",
+            "-f",
+            "sokol_zig",
+        });
+
+        compile_steps.append(&cmd.step) catch unreachable;
+    }
+
+    const shader_step = b.step("shader", "compile sokol shaders");
+    for (compile_steps.items) |step| shader_step.dependOn(step);
 }

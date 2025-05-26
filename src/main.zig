@@ -6,7 +6,7 @@ const sapp = sokol.app;
 const slog = sokol.log;
 const sglue = sokol.glue;
 
-const shd = @import("shaders/triangle.glsl.zig");
+const shd = @import("shaders/compiled/triangle.glsl.zig");
 
 const state = struct {
     var pass_action: sg.PassAction = .{};
