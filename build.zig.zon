@@ -6,6 +6,10 @@
             .url = "git+https://github.com/floooh/sokol-zig.git#105ed4a3d29591716d839b3126fb7c76b161a5fe",
             .hash = "sokol-0.1.0-pb1HK-yNLQAZHqFcNpsx08eOxkT-turvZsLrAjouDEOd",
         },
+        .zalgebra = .{
+            .url = "git+https://github.com/kooparse/zalgebra.git#412c3e1cddcf6b8494a6c008dd152c6e0ec5e846",
+            .hash = "zalgebra-0.0.0-aaiVSk5nAQA4CIV_flm1iIpWiSrVcxggA9y_aaa-TtdR",
+        },
     },
     .fingerprint = 0xb11fae52c01ec894,
     .minimum_zig_version = "0.15.0-dev.643+dc6ffc28b",

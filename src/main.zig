@@ -20,12 +20,58 @@ export fn init() void {
         .logger = .{ .func = slog.func },
     });
 
+    // cube vertex buffer
     state.bind.vertex_buffers[0] = sg.makeBuffer(.{
         .data = sg.asRange(&[_]f32{
-            0.0,  0.5,  0.5, 1.0, 0.0, 0.0, 1.0,
-            0.5,  -0.5, 0.5, 0.0, 1.0, 0.0, 1.0,
-            -0.5, -0.5, 0.5, 0.0, 0.0, 1.0, 1.0,
+            // positions        colors
+            -1.0, -1.0, -1.0, 1.0, 0.0, 0.0, 1.0,
+            1.0,  -1.0, -1.0, 1.0, 0.0, 0.0, 1.0,
+            1.0,  1.0,  -1.0, 1.0, 0.0, 0.0, 1.0,
+            -1.0, 1.0,  -1.0, 1.0, 0.0, 0.0, 1.0,
+
+            -1.0, -1.0, 1.0,  0.0, 1.0, 0.0, 1.0,
+            1.0,  -1.0, 1.0,  0.0, 1.0, 0.0, 1.0,
+            1.0,  1.0,  1.0,  0.0, 1.0, 0.0, 1.0,
+            -1.0, 1.0,  1.0,  0.0, 1.0, 0.0, 1.0,
+
+            -1.0, -1.0, -1.0, 0.0, 0.0, 1.0, 1.0,
+            -1.0, 1.0,  -1.0, 0.0, 0.0, 1.0, 1.0,
+            -1.0, 1.0,  1.0,  0.0, 0.0, 1.0, 1.0,
+            -1.0, -1.0, 1.0,  0.0, 0.0, 1.0, 1.0,
+
+            1.0,  -1.0, -1.0, 1.0, 0.5, 0.0, 1.0,
+            1.0,  1.0,  -1.0, 1.0, 0.5, 0.0, 1.0,
+            1.0,  1.0,  1.0,  1.0, 0.5, 0.0, 1.0,
+            1.0,  -1.0, 1.0,  1.0, 0.5, 0.0, 1.0,
+
+            -1.0, -1.0, -1.0, 0.0, 0.5, 1.0, 1.0,
+            -1.0, -1.0, 1.0,  0.0, 0.5, 1.0, 1.0,
+            1.0,  -1.0, 1.0,  0.0, 0.5, 1.0, 1.0,
+            1.0,  -1.0, -1.0, 0.0, 0.5, 1.0, 1.0,
+
+            -1.0, 1.0,  -1.0, 1.0, 0.0, 0.5, 1.0,
+            -1.0, 1.0,  1.0,  1.0, 0.0, 0.5, 1.0,
+            1.0,  1.0,  1.0,  1.0, 0.0, 0.5, 1.0,
+            1.0,  1.0,  -1.0, 1.0, 0.0, 0.5, 1.0,
         }),
+    });
+
+    // cube index buffer
+    state.bind.index_buffer = sg.makeBuffer(.{
+        .usage = .{ .index_buffer = true },
+        .data = sg.asRange(&[_]u16{
+            0,  1,  2,  0,  2,  3,
+            6,  5,  4,  7,  6,  4,
+            8,  9,  10, 8,  10, 11,
+            14, 13, 12, 15, 14, 12,
+            16, 17, 18, 16, 18, 19,
+            22, 21, 20, 23, 22, 20,
+        }),
+    });
+
+    state.bind.index_buffer = sg.makeBuffer(.{
+        .usage = .{ .index_buffer = true },
+        .data = sg.asRange(&[_]u16{ 0, 1, 2, 2, 3, 0 }),
     });
 
     state.pip = sg.makePipeline(.{
@@ -36,6 +82,12 @@ export fn init() void {
             l.attrs[shd.ATTR_triangle_color0].format = .FLOAT4;
             break :init l;
         },
+        .index_type = .UINT16,
+        .depth = .{
+            .compare = .LESS_EQUAL,
+            .write_enabled = true,
+        },
+        .cull_mode = .BACK,
     });
 
     state.pass_action.colors[0] = .{ .load_action = .CLEAR, .clear_value = .{
@@ -54,7 +106,7 @@ export fn frame() void {
     });
     sg.applyPipeline(state.pip);
     sg.applyBindings(state.bind);
-    sg.draw(0, 3, 1);
+    sg.draw(0, 36, 1);
     sg.endPass();
     sg.commit();
 }
