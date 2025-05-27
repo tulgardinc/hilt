@@ -69,7 +69,7 @@ export fn init() void {
         .layout = init: {
             var l = sg.VertexLayoutState{};
             l.buffers[1].step_func = .PER_INSTANCE;
-            l.buffers[1].stride = @sizeOf(zalg.Vec3);
+            //l.buffers[1].stride = @sizeOf(zalg.Vec3);
             l.attrs[shd.ATTR_instancing_pos] = .{ .format = .FLOAT3, .buffer_index = 0 };
             l.attrs[shd.ATTR_instancing_color0] = .{ .format = .FLOAT4, .buffer_index = 0 };
             l.attrs[shd.ATTR_instancing_inst_pos] = .{ .format = .FLOAT3, .buffer_index = 1 };
@@ -113,6 +113,8 @@ export fn frame() void {
         }
     }
 
+    var gpu_pos: [MAX_PARTICLES][3]f32 = undefined;
+
     for (0..MAX_PARTICLES) |i| {
         const vel = &state.vel[i];
         const pos = &state.pos[i];
@@ -125,9 +127,11 @@ export fn frame() void {
             velY.* = -velY.*;
             vel.* = vel.mul(zalg.Vec3.set(0.8));
         }
+
+        gpu_pos[i] = pos.toArray();
     }
 
-    sg.updateBuffer(state.bind.vertex_buffers[1], sg.asRange(state.pos[0..state.num_particles]));
+    sg.updateBuffer(state.bind.vertex_buffers[1], sg.asRange(gpu_pos[0..state.num_particles]));
 
     state.ry += 0.1;
     const vs_params = computeVsParams(0, state.ry);
