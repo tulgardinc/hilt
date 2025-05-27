@@ -10,6 +10,14 @@
             .url = "git+https://github.com/kooparse/zalgebra.git#412c3e1cddcf6b8494a6c008dd152c6e0ec5e846",
             .hash = "zalgebra-0.0.0-aaiVSk5nAQA4CIV_flm1iIpWiSrVcxggA9y_aaa-TtdR",
         },
+        .@"mach-freetype" = .{
+            .url = "git+https://github.com/hexops/mach-freetype.git#359e8721d4b988d6297534164e4976a71c46ec43",
+            .hash = "mach_freetype-0.0.0-AAAAALwUAgCt_Mzj28Tk-oZQ_a7BEKZ29rihRi7W70Io",
+        },
+        .@"font-assets" = .{
+            .url = "git+https://github.com/hexops/font-assets.git#ffc5e8ad7314e1e9eb5ab1b8eade0b0b666182ed",
+            .hash = "N-V-__8AAIsoDAAVDdvyeG3DZRo2X-ZITnIawK5bA7G24d3n",
+        },
     },
     .fingerprint = 0xb11fae52c01ec894,
     .minimum_zig_version = "0.15.0-dev.643+dc6ffc28b",
