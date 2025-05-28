@@ -75,7 +75,7 @@ pub fn build(b: *std.Build) void {
         ) catch unreachable;
 
         const cmd = b.addSystemCommand(&[_][]const u8{
-            "./sokol-tools/sokol-tools/zig-out/bin/sokol-shdc",
+            "./sokol-tools/zig-out/bin/sokol-shdc",
             "-i",
             path,
             "-o",

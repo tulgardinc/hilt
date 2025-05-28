@@ -9,7 +9,7 @@ const sapp = sokol.app;
 const slog = sokol.log;
 const sglue = sokol.glue;
 
-const shd = @import("shaders/compiled/retry.glsl.zig");
+const shd = @import("shaders/compiled/text.glsl.zig");
 
 const state = struct {
     var pass_action: sg.PassAction = .{};
@@ -174,7 +174,7 @@ export fn init() void {
 
     var pip_descriptor: sg.PipelineDesc = .{
         .cull_mode = .BACK,
-        .shader = sg.makeShader(shd.retryShaderDesc(sg.queryBackend())),
+        .shader = sg.makeShader(shd.textShaderDesc(sg.queryBackend())),
         .depth = .{
             .compare = .LESS_EQUAL,
             .write_enabled = true,
@@ -182,10 +182,10 @@ export fn init() void {
         .layout = init: {
             var l: sg.VertexLayoutState = .{};
             l.buffers[0].step_func = .PER_VERTEX;
-            l.attrs[shd.ATTR_retry_pos] = .{
+            l.attrs[shd.ATTR_text_pos] = .{
                 .format = .FLOAT2,
             };
-            l.attrs[shd.ATTR_retry_uv0] = .{
+            l.attrs[shd.ATTR_text_uv0] = .{
                 .format = .FLOAT2,
             };
             break :init l;
