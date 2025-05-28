@@ -1,3 +1,4 @@
 .zig-cache/
 sokol-tools/
 zig-out/
+src/shaders/compiled/
