@@ -9,7 +9,19 @@ const sapp = sokol.app;
 const slog = sokol.log;
 const sglue = sokol.glue;
 
-const shd = @import("shaders/compiled/text.glsl.zig");
+const shd = @import("shaders/compiled/retry.glsl.zig");
+
+const state = struct {
+    var pass_action: sg.PassAction = .{};
+    var bind: sg.Bindings = .{};
+    var pip: sg.Pipeline = .{};
+
+    var char_count: usize = 0;
+    var text: [1024]u8 = undefined;
+    var vertices: [1024]Vertex = undefined;
+    var glyphs: [128]Glyph = undefined;
+    var atlas_pixels: [ATLAS_W * ATLAS_H]u8 = .{0} ** (ATLAS_W * ATLAS_H);
+};
 
 const ATLAS_W = 512;
 const ATLAS_H = 512;
@@ -19,29 +31,14 @@ const Glyph = struct {
     v0: f32,
     u1: f32,
     v1: f32,
-    w: u32,
-    h: u32,
-    bearing_x: i32,
-    bearing_y: i32,
+    w: f32,
+    h: f32,
+    bearing_x: f32,
+    bearing_y: f32,
     advance: i16,
 };
 
 const Vertex = packed struct { x: f32, y: f32, u: f32, v: f32 };
-
-const state = struct {
-    var pass_action: sg.PassAction = .{};
-    var bind: sg.Bindings = .{};
-    var pip: sg.Pipeline = .{};
-    var glyphs: [128]Glyph = undefined;
-    var atlas_pixels: [ATLAS_W * ATLAS_H]u8 = .{0} ** (ATLAS_W * ATLAS_H);
-    var vertices: [1024]Vertex = undefined;
-
-    const view: zalg.Mat4 = zalg.Mat4.lookAt(
-        zalg.Vec3.new(0.0, 0.0, 1.0),
-        zalg.Vec3.zero(),
-        zalg.Vec3.up(),
-    );
-};
 
 fn buildAtlas() !void {
     const ftlib = try ft.Library.init();
@@ -80,12 +77,12 @@ fn buildAtlas() !void {
         state.glyphs[c] = Glyph{
             .u0 = @as(f32, @floatFromInt(pen_x)) / ATLAS_W,
             .v0 = @as(f32, @floatFromInt(pen_y)) / ATLAS_H,
-            .u1 = (@as(f32, @floatFromInt(pen_x + bmp.width())) / ATLAS_W) * 32767,
-            .v1 = (@as(f32, @floatFromInt(pen_y + bmp.rows())) / ATLAS_H) * 32767,
-            .w = bmp.width(),
-            .h = bmp.rows(),
-            .bearing_x = slot.bitmapLeft(),
-            .bearing_y = slot.bitmapTop(),
+            .u1 = (@as(f32, @floatFromInt(pen_x + bmp.width())) / ATLAS_W),
+            .v1 = (@as(f32, @floatFromInt(pen_y + bmp.rows())) / ATLAS_H),
+            .w = @floatFromInt(bmp.width()),
+            .h = @floatFromInt(bmp.rows()),
+            .bearing_x = @floatFromInt(slot.bitmapLeft()),
+            .bearing_y = @floatFromInt(slot.bitmapTop()),
             .advance = @as(i16, @intCast(slot.advance().x)) >> 6,
         };
 
@@ -94,65 +91,55 @@ fn buildAtlas() !void {
     }
 }
 
+fn emitQuad(char_index: usize, g: Glyph, x: usize, y: usize) void {
+    // x: left y: bottom
+    // y+ = down
+    const vertex_index = char_index * 6;
+
+    const fx: f32 = @as(f32, @floatFromInt(x)) + g.bearing_x;
+    const fy: f32 = @as(f32, @floatFromInt(y)) - g.bearing_y;
+
+    const p1: Vertex = .{
+        .x = fx,
+        .y = fy,
+        .u = g.u0,
+        .v = g.v0,
+    };
+    const p2: Vertex = .{
+        .x = fx + g.w,
+        .y = fy,
+        .u = g.u1,
+        .v = g.v0,
+    };
+    const p3: Vertex = .{
+        .x = fx + g.w,
+        .y = fy + g.h,
+        .u = g.u1,
+        .v = g.v1,
+    };
+    const p4: Vertex = .{
+        .x = fx,
+        .y = fy + g.h,
+        .u = g.u0,
+        .v = g.v1,
+    };
+
+    state.vertices[vertex_index] = p1;
+    state.vertices[vertex_index + 1] = p2;
+    state.vertices[vertex_index + 2] = p4;
+    state.vertices[vertex_index + 3] = p2;
+    state.vertices[vertex_index + 4] = p3;
+    state.vertices[vertex_index + 5] = p4;
+}
+
 export fn init() void {
+    buildAtlas() catch |e| {
+        std.debug.print("failed to build atlas {}\n", .{e});
+    };
+
     sg.setup(.{
         .environment = sglue.environment(),
         .logger = .{ .func = slog.func },
-    });
-
-    buildAtlas() catch |e| {
-        std.debug.print("Freetype failed: {}\n", .{e});
-        return;
-    };
-
-    var image_desc: sg.ImageDesc = .{
-        .width = ATLAS_W,
-        .height = ATLAS_H,
-        .pixel_format = .R8,
-        .label = "font_atlas",
-    };
-    image_desc.data.subimage[0][0] = sg.asRange(&state.atlas_pixels);
-
-    const font_image = sg.makeImage(image_desc);
-
-    const font_smp = sg.makeSampler(.{
-        .min_filter = .LINEAR,
-        .mag_filter = .LINEAR,
-        .wrap_u = .CLAMP_TO_EDGE,
-        .wrap_v = .CLAMP_TO_EDGE,
-    });
-
-    state.bind.vertex_buffers[0] = sg.makeBuffer(.{
-        .usage = .{ .stream_update = true },
-        .size = 1024 * @sizeOf(Vertex),
-    });
-
-    state.bind.images[shd.IMG_tex] = font_image;
-    state.bind.samplers[shd.SMP_tex_smp] = font_smp;
-
-    state.pip = sg.makePipeline(.{
-        .shader = sg.makeShader(shd.textShaderDesc(sg.queryBackend())),
-        .layout = init: {
-            var l = sg.VertexLayoutState{};
-            l.buffers[0].stride = @sizeOf(Vertex);
-            l.buffers[0].step_func = .PER_VERTEX;
-            l.attrs[shd.ATTR_text_pos] = .{
-                .format = .FLOAT2,
-                .buffer_index = 0,
-                .offset = 0,
-            };
-            l.attrs[shd.ATTR_text_uv0] = .{
-                .format = .FLOAT2,
-                .buffer_index = 0,
-                .offset = @sizeOf([2]f32),
-            };
-            break :init l;
-        },
-        .depth = .{
-            .compare = .ALWAYS,
-            .write_enabled = false,
-        },
-        .cull_mode = .NONE,
     });
 
     state.pass_action.colors[0] = .{
@@ -164,60 +151,110 @@ export fn init() void {
             .a = 1.0,
         },
     };
-    std.debug.print("Backend: {}\n", .{sg.queryBackend()});
-}
 
-fn emitQuad(base: usize, x: f32, y: f32, g: Glyph) void {
-    const x0 = x + @as(f32, @floatFromInt(g.bearing_x));
-    const y0 = y - @as(f32, @floatFromInt(g.bearing_y));
-    const x1 = x0 + @as(f32, @floatFromInt(g.w));
-    const y1 = y0 + @as(f32, @floatFromInt(g.h));
+    state.bind.vertex_buffers[0] = sg.makeBuffer(.{
+        .usage = .{ .dynamic_update = true },
+        .size = @sizeOf(Vertex) * 1024,
+    });
 
-    state.vertices[base + 0] = .{ .x = x0, .y = y0, .u = g.u0, .v = g.v0 };
-    state.vertices[base + 1] = .{ .x = x0, .y = y1, .u = g.u0, .v = g.v1 };
-    state.vertices[base + 2] = .{ .x = x1, .y = y1, .u = g.u1, .v = g.v1 };
-    state.vertices[base + 3] = .{ .x = x0, .y = y0, .u = g.u0, .v = g.v0 };
-    state.vertices[base + 4] = .{ .x = x1, .y = y1, .u = g.u1, .v = g.v1 };
-    state.vertices[base + 5] = .{ .x = x1, .y = y0, .u = g.u1, .v = g.v0 };
+    state.bind.samplers[shd.SMP_smp] = sg.makeSampler(.{
+        .mag_filter = .LINEAR,
+        .min_filter = .LINEAR,
+        .wrap_u = .CLAMP_TO_EDGE,
+        .wrap_v = .CLAMP_TO_EDGE,
+    });
+
+    var image_descriptor: sg.ImageDesc = .{
+        .width = ATLAS_W,
+        .height = ATLAS_H,
+        .pixel_format = .R8,
+    };
+    image_descriptor.data.subimage[0][0] = sg.asRange(&state.atlas_pixels);
+    state.bind.images[shd.IMG_tex] = sg.makeImage(image_descriptor);
+
+    var pip_descriptor: sg.PipelineDesc = .{
+        .cull_mode = .BACK,
+        .shader = sg.makeShader(shd.retryShaderDesc(sg.queryBackend())),
+        .depth = .{
+            .compare = .LESS_EQUAL,
+            .write_enabled = true,
+        },
+        .layout = init: {
+            var l: sg.VertexLayoutState = .{};
+            l.buffers[0].step_func = .PER_VERTEX;
+            l.attrs[shd.ATTR_retry_pos] = .{
+                .format = .FLOAT2,
+            };
+            l.attrs[shd.ATTR_retry_uv0] = .{
+                .format = .FLOAT2,
+            };
+            break :init l;
+        },
+    };
+    pip_descriptor.colors[0].blend.enabled = true;
+    pip_descriptor.colors[0].blend.src_factor_rgb = .SRC_ALPHA;
+    pip_descriptor.colors[0].blend.dst_factor_rgb = .ONE_MINUS_SRC_ALPHA;
+    pip_descriptor.colors[0].blend.src_factor_alpha = .SRC_ALPHA;
+    pip_descriptor.colors[0].blend.dst_factor_alpha = .ONE_MINUS_SRC_ALPHA;
+
+    state.pip = sg.makePipeline(pip_descriptor);
 }
 
 export fn frame() void {
-    const text = "Hello World!";
-
-    var pen_x: f32 = 20;
-    const pen_y: f32 = 120;
-
-    var vtx_count: usize = 0;
-    for (text) |byte| {
-        const g = state.glyphs[byte];
-        emitQuad(vtx_count, pen_x, pen_y, g);
-        vtx_count += 6;
-        pen_x += @floatFromInt(g.advance);
+    var pen_x: usize = 20;
+    for (state.text[0..state.char_count], 0..) |char, i| {
+        const glyph = state.glyphs[char];
+        emitQuad(i, state.glyphs[char], pen_x, 100);
+        pen_x += @intCast(glyph.advance);
     }
 
-    sg.updateBuffer(state.bind.vertex_buffers[0], sg.asRange(state.vertices[0..vtx_count]));
+    const vs_params: shd.VsParams = .{
+        .mvp = zalg.orthographic(
+            0.0,
+            sapp.widthf(),
+            sapp.heightf(),
+            0.0,
+            -1.0,
+            1.0,
+        ),
+    };
 
-    const vs_params: shd.VsParams = .{ .mvp = zalg.Mat4.orthographic(
-        0,
-        sapp.widthf(),
-        sapp.heightf(),
-        0,
-        -1,
-        5,
-    ) };
-    const fs_params: shd.FsParams = .{ .color = .{ 1, 1, 1, 1 } };
+    if (state.char_count > 0) {
+        sg.updateBuffer(
+            state.bind.vertex_buffers[0],
+            sg.asRange(state.vertices[0 .. state.char_count * 6]),
+        );
+    }
 
     sg.beginPass(.{
-        .action = state.pass_action,
         .swapchain = sglue.swapchain(),
+        .action = state.pass_action,
     });
     sg.applyPipeline(state.pip);
     sg.applyBindings(state.bind);
     sg.applyUniforms(shd.UB_vs_params, sg.asRange(&vs_params));
-    sg.applyUniforms(shd.UB_fs_params, sg.asRange(&fs_params));
-    sg.draw(0, @intCast(vtx_count), 1);
+    sg.draw(0, @intCast(state.char_count * 6), 1);
     sg.endPass();
     sg.commit();
+}
+
+export fn event(e: [*c]const sapp.Event) void {
+    if (e) |ev| {
+        switch (ev.*.type) {
+            .KEY_DOWN => {
+                if (ev.*.key_code == .BACKSPACE) {
+                    if (state.char_count > 0) {
+                        state.char_count -= 1;
+                    }
+                }
+            },
+            .CHAR => {
+                state.text[state.char_count] = @intCast(ev.*.char_code);
+                state.char_count += 1;
+            },
+            else => {},
+        }
+    }
 }
 
 export fn cleanup() void {
@@ -229,6 +266,7 @@ pub fn main() !void {
         .init_cb = init,
         .frame_cb = frame,
         .cleanup_cb = cleanup,
+        .event_cb = event,
         .width = 640,
         .height = 480,
         .icon = .{ .sokol_default = true },

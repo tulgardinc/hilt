@@ -10,7 +10,7 @@ pub fn build(b: *std.Build) void {
     const dep_font_assets = b.dependency("font-assets", .{});
 
     const exe_mod = b.createModule(.{
-        .root_source_file = b.path("src/retry.zig"),
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
