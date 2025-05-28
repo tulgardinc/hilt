@@ -16,6 +16,8 @@ const state = struct {
     var bind: sg.Bindings = .{};
     var pip: sg.Pipeline = .{};
 
+    var char_count: usize = 0;
+    var text: [1024]u8 = undefined;
     var vertex_count: usize = 0;
     var vertices: [1024]Vertex = undefined;
     var glyphs: [128]Glyph = undefined;
@@ -137,15 +139,6 @@ export fn init() void {
         std.debug.print("failed to build atlas {}\n", .{e});
     };
 
-    const text = "Hello World!";
-
-    var pen_x: usize = 20;
-    for (text) |char| {
-        const glyph = state.glyphs[char];
-        emitQuad(state.glyphs[char], pen_x, 100);
-        pen_x += @intCast(glyph.advance);
-    }
-
     sg.setup(.{
         .environment = sglue.environment(),
         .logger = .{ .func = slog.func },
@@ -162,9 +155,8 @@ export fn init() void {
     };
 
     state.bind.vertex_buffers[0] = sg.makeBuffer(.{
-        .data = sg.asRange(
-            state.vertices[0..state.vertex_count],
-        ),
+        .usage = .{ .dynamic_update = true },
+        .size = @sizeOf(Vertex) * 1024,
     });
 
     state.bind.samplers[shd.SMP_smp] = sg.makeSampler(.{
@@ -211,6 +203,14 @@ export fn init() void {
 }
 
 export fn frame() void {
+    var pen_x: usize = 20;
+    state.vertex_count = 0;
+    for (state.text[0..state.char_count]) |char| {
+        const glyph = state.glyphs[char];
+        emitQuad(state.glyphs[char], pen_x, 100);
+        pen_x += @intCast(glyph.advance);
+    }
+
     const vs_params: shd.VsParams = .{
         .mvp = zalg.orthographic(
             0.0,
@@ -222,6 +222,13 @@ export fn frame() void {
         ),
     };
 
+    if (state.char_count > 0) {
+        sg.updateBuffer(
+            state.bind.vertex_buffers[0],
+            sg.asRange(state.vertices[0..state.vertex_count]),
+        );
+    }
+
     sg.beginPass(.{
         .swapchain = sglue.swapchain(),
         .action = state.pass_action,
@@ -229,9 +236,30 @@ export fn frame() void {
     sg.applyPipeline(state.pip);
     sg.applyBindings(state.bind);
     sg.applyUniforms(shd.UB_vs_params, sg.asRange(&vs_params));
-    sg.draw(0, 6 * @as(u32, @intCast(state.vertex_count)), 1);
+    sg.draw(0, @intCast(state.vertex_count), 1);
     sg.endPass();
     sg.commit();
+}
+
+export fn event(e: [*c]const sapp.Event) void {
+    if (e) |ev| {
+        switch (ev.*.type) {
+            .KEY_DOWN => {
+                if (ev.*.key_code == .BACKSPACE) {
+                    std.debug.print("delete\n", .{});
+                    if (state.char_count > 0) {
+                        state.char_count -= 1;
+                        state.vertex_count -= 6;
+                    }
+                }
+            },
+            .CHAR => {
+                state.text[state.char_count] = @intCast(ev.*.char_code);
+                state.char_count += 1;
+            },
+            else => {},
+        }
+    }
 }
 
 export fn cleanup() void {
@@ -243,6 +271,7 @@ pub fn main() !void {
         .init_cb = init,
         .frame_cb = frame,
         .cleanup_cb = cleanup,
+        .event_cb = event,
         .width = 640,
         .height = 480,
         .icon = .{ .sokol_default = true },
