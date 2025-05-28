@@ -37,7 +37,7 @@ const state = struct {
     var vertices: [1024]Vertex = undefined;
 
     const view: zalg.Mat4 = zalg.Mat4.lookAt(
-        zalg.Vec3.new(0.0, 0.0, 6.0),
+        zalg.Vec3.new(0.0, 0.0, 1.0),
         zalg.Vec3.zero(),
         zalg.Vec3.up(),
     );
@@ -80,8 +80,8 @@ fn buildAtlas() !void {
         state.glyphs[c] = Glyph{
             .u0 = @as(f32, @floatFromInt(pen_x)) / ATLAS_W,
             .v0 = @as(f32, @floatFromInt(pen_y)) / ATLAS_H,
-            .u1 = @as(f32, @floatFromInt(pen_x + bmp.width())) / ATLAS_W,
-            .v1 = @as(f32, @floatFromInt(pen_y + bmp.rows())) / ATLAS_H,
+            .u1 = (@as(f32, @floatFromInt(pen_x + bmp.width())) / ATLAS_W) * 32767,
+            .v1 = (@as(f32, @floatFromInt(pen_y + bmp.rows())) / ATLAS_H) * 32767,
             .w = bmp.width(),
             .h = bmp.rows(),
             .bearing_x = slot.bitmapLeft(),
