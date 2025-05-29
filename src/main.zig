@@ -1,8 +1,9 @@
 const std = @import("std");
 const zalg = @import("zalgebra");
 const ft = @import("mach-freetype");
-const fa = @import("font-assets");
 const Buffer = @import("buffer.zig");
+
+const font = @embedFile("assets/JetBrainsMono-Medium.ttf");
 
 const sokol = @import("sokol");
 const sg = sokol.gfx;
@@ -52,7 +53,7 @@ fn buildAtlas() !void {
     const ftlib = try ft.Library.init();
     defer ftlib.deinit();
 
-    const face = try ftlib.createFaceMemory(fa.fira_sans_regular_ttf, 0);
+    const face = try ftlib.createFaceMemory(font, 0);
     try face.setPixelSizes(0, 48);
 
     var pen_x: usize = 1;
@@ -387,8 +388,8 @@ pub fn main() !void {
         .frame_cb = frame,
         .cleanup_cb = cleanup,
         .event_cb = event,
-        .width = 640,
-        .height = 480,
+        .width = 960,
+        .height = 540,
         .icon = .{ .sokol_default = true },
         .window_title = "test",
         .logger = .{ .func = slog.func },

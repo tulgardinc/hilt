@@ -7,7 +7,6 @@ pub fn build(b: *std.Build) void {
     const dep_sokol = b.dependency("sokol", .{ .target = target, .optimize = optimize });
     const dep_zalgebra = b.dependency("zalgebra", .{ .target = target, .optimize = optimize });
     const dep_freetype = b.dependency("mach-freetype", .{ .target = target, .optimize = optimize });
-    const dep_font_assets = b.dependency("font-assets", .{});
 
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
@@ -23,7 +22,6 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("sokol", dep_sokol.module("sokol"));
     exe.root_module.addImport("zalgebra", dep_zalgebra.module("zalgebra"));
     exe.root_module.addImport("mach-freetype", dep_freetype.module("mach-freetype"));
-    exe.root_module.addImport("font-assets", dep_font_assets.module("font-assets"));
 
     b.installArtifact(exe);
 
