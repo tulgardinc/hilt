@@ -1,7 +1,8 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{ .default_target = .{ .os_tag = .windows } });
+    //const target = b.standardTargetOptions(.{ .default_target = .{ .os_tag = .windows } });
+    const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
     const dep_sokol = b.dependency("sokol", .{ .target = target, .optimize = optimize });

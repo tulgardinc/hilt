@@ -2,6 +2,7 @@ const std = @import("std");
 const zalg = @import("zalgebra");
 const ft = @import("mach-freetype");
 const fa = @import("font-assets");
+const Buffer = @import("buffer.zig");
 
 const sokol = @import("sokol");
 const sg = sokol.gfx;
@@ -11,13 +12,17 @@ const sglue = sokol.glue;
 
 const shd = @import("shaders/compiled/text.glsl.zig");
 
+var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+const allocator = gpa.allocator();
+
 const state = struct {
     var pass_action: sg.PassAction = .{};
     var bind: sg.Bindings = .{};
     var pip: sg.Pipeline = .{};
 
-    var char_count: usize = 0;
-    var text: [1024]u8 = undefined;
+    var buffer: Buffer = undefined;
+    var cursor_position = zalg.Vec2.init();
+
     var vertices: [1024]Vertex = undefined;
     var glyphs: [128]Glyph = undefined;
     var atlas_pixels: [ATLAS_W * ATLAS_H]u8 = .{0} ** (ATLAS_W * ATLAS_H);
@@ -133,6 +138,8 @@ fn emitQuad(char_index: usize, g: Glyph, x: usize, y: usize) void {
 }
 
 export fn init() void {
+    state.buffer = Buffer.init(4096, allocator) catch unreachable;
+
     buildAtlas() catch |e| {
         std.debug.print("failed to build atlas {}\n", .{e});
     };
@@ -202,10 +209,34 @@ export fn init() void {
 
 export fn frame() void {
     var pen_x: usize = 20;
-    for (state.text[0..state.char_count], 0..) |char, i| {
-        const glyph = state.glyphs[char];
-        emitQuad(i, state.glyphs[char], pen_x, 100);
-        pen_x += @intCast(glyph.advance);
+    var pen_y: usize = 100;
+    const row_height = 50;
+
+    var index: usize = 0;
+    while (index < state.buffer.getTextLength()) {
+        for (state.buffer.getBeforeGap()) |char| {
+            if (char != '\n') {
+                const glyph = state.glyphs[char];
+                emitQuad(index, state.glyphs[char], pen_x, pen_y);
+                pen_x += @intCast(glyph.advance);
+            } else {
+                pen_x = 20;
+                pen_y += row_height;
+            }
+            index += 1;
+        }
+
+        for (state.buffer.getAfterGap()) |char| {
+            if (char != '\n') {
+                const glyph = state.glyphs[char];
+                emitQuad(index, state.glyphs[char], pen_x, pen_y);
+                pen_x += @intCast(glyph.advance);
+            } else {
+                pen_x = 20;
+                pen_y += row_height;
+            }
+            index += 1;
+        }
     }
 
     const vs_params: shd.VsParams = .{
@@ -219,10 +250,12 @@ export fn frame() void {
         ),
     };
 
-    if (state.char_count > 0) {
+    const vertexCount: u32 = @intCast(6 * state.buffer.getTextLength());
+
+    if (state.buffer.getTextLength() > 0) {
         sg.updateBuffer(
             state.bind.vertex_buffers[0],
-            sg.asRange(state.vertices[0 .. state.char_count * 6]),
+            sg.asRange(state.vertices[0..vertexCount]),
         );
     }
 
@@ -233,7 +266,7 @@ export fn frame() void {
     sg.applyPipeline(state.pip);
     sg.applyBindings(state.bind);
     sg.applyUniforms(shd.UB_vs_params, sg.asRange(&vs_params));
-    sg.draw(0, @intCast(state.char_count * 6), 1);
+    sg.draw(0, vertexCount, 1);
     sg.endPass();
     sg.commit();
 }
@@ -242,15 +275,31 @@ export fn event(e: [*c]const sapp.Event) void {
     if (e) |ev| {
         switch (ev.*.type) {
             .KEY_DOWN => {
-                if (ev.*.key_code == .BACKSPACE) {
-                    if (state.char_count > 0) {
-                        state.char_count -= 1;
-                    }
+                switch (ev.*.key_code) {
+                    .BACKSPACE => {
+                        if (state.buffer.getBeforeGap().len > 0) {
+                            state.buffer.deleteChar() catch unreachable;
+                        }
+                    },
+                    .ENTER => {
+                        state.buffer.addChar('\n') catch unreachable;
+                    },
+                    .LEFT => {
+                        if (state.buffer.gap_start == 0) return;
+                        state.buffer.moveGap(state.buffer.gap_start - 1) catch |err| {
+                            std.debug.print("{}\n", .{err});
+                        };
+                    },
+                    .RIGHT => {
+                        state.buffer.moveGap(state.buffer.gap_start + 1) catch |err| {
+                            std.debug.print("{}\n", .{err});
+                        };
+                    },
+                    else => {},
                 }
             },
             .CHAR => {
-                state.text[state.char_count] = @intCast(ev.*.char_code);
-                state.char_count += 1;
+                state.buffer.addChar(@intCast(ev.*.char_code)) catch unreachable;
             },
             else => {},
         }
@@ -258,6 +307,7 @@ export fn event(e: [*c]const sapp.Event) void {
 }
 
 export fn cleanup() void {
+    state.buffer.deinit();
     sg.shutdown();
 }
 
