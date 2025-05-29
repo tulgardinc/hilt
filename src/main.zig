@@ -99,10 +99,9 @@ fn buildAtlas() !void {
     }
 }
 
-fn emitQuad(char_index: usize, g: Glyph, x: usize, y: usize) void {
+fn emitQuad(vertex_index: usize, g: Glyph, x: usize, y: usize) void {
     // x: left y: bottom
     // y+ = down
-    const vertex_index = char_index * 6;
 
     const fx: f32 = @as(f32, @floatFromInt(x)) + g.bearing_x;
     const fy: f32 = @as(f32, @floatFromInt(y)) - g.bearing_y;
@@ -149,7 +148,9 @@ export fn init() void {
 
     sg.setup(.{
         .environment = sglue.environment(),
-        .logger = .{ .func = slog.func },
+        .logger = .{
+            .func = slog.func,
+        },
     });
 
     state.pass_action.colors[0] = .{
@@ -245,18 +246,20 @@ export fn frame() void {
     var cursor_x: usize = 0;
     var cursor_y: usize = 100;
 
-    var index: usize = 0;
-    while (index < state.buffer.getTextLength()) {
+    var char_index: usize = 0;
+    var vertex_index: usize = 0;
+    while (char_index < state.buffer.getTextLength()) {
         for (state.buffer.getBeforeGap()) |char| {
             if (char != '\n') {
                 const glyph = state.glyphs[char];
-                emitQuad(index, state.glyphs[char], pen_x, pen_y);
+                emitQuad(vertex_index, state.glyphs[char], pen_x, pen_y);
                 pen_x += @intCast(glyph.advance);
+                vertex_index += 6;
             } else {
                 pen_x = 20;
                 pen_y += row_height;
             }
-            index += 1;
+            char_index += 1;
         }
 
         cursor_x = pen_x;
@@ -265,15 +268,18 @@ export fn frame() void {
         for (state.buffer.getAfterGap()) |char| {
             if (char != '\n') {
                 const glyph = state.glyphs[char];
-                emitQuad(index, state.glyphs[char], pen_x, pen_y);
+                emitQuad(vertex_index, state.glyphs[char], pen_x, pen_y);
                 pen_x += @intCast(glyph.advance);
+                vertex_index += 6;
             } else {
                 pen_x = 20;
                 pen_y += row_height;
             }
-            index += 1;
+            char_index += 1;
         }
     }
+
+    const vertex_count = vertex_index + 1;
 
     const ortho = zalg.orthographic(
         0.0,
@@ -300,12 +306,10 @@ export fn frame() void {
         .mvp = ortho,
     };
 
-    const vertexCount: u32 = @intCast(6 * state.buffer.getTextLength());
-
     if (state.buffer.getTextLength() > 0) {
         sg.updateBuffer(
             state.text_bind.vertex_buffers[0],
-            sg.asRange(state.vertices[0..vertexCount]),
+            sg.asRange(state.vertices[0..vertex_count]),
         );
     }
 
@@ -317,7 +321,7 @@ export fn frame() void {
     sg.applyPipeline(state.text_pip);
     sg.applyBindings(state.text_bind);
     sg.applyUniforms(text_shd.UB_vs_params, sg.asRange(&text_vs_params));
-    sg.draw(0, vertexCount, 1);
+    sg.draw(0, @intCast(vertex_count), 1);
     // draw cursor
     sg.applyPipeline(state.cursor_pip);
     sg.applyBindings(state.cursor_bind);
@@ -348,6 +352,16 @@ export fn event(e: [*c]const sapp.Event) void {
                     },
                     .RIGHT => {
                         state.buffer.moveGap(state.buffer.gap_start + 1) catch |err| {
+                            std.debug.print("{}\n", .{err});
+                        };
+                    },
+                    .UP => {
+                        state.buffer.moveGapUpByLine() catch |err| {
+                            std.debug.print("{}\n", .{err});
+                        };
+                    },
+                    .DOWN => {
+                        state.buffer.moveGapDownByLine() catch |err| {
                             std.debug.print("{}\n", .{err});
                         };
                     },
