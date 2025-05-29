@@ -14,10 +14,14 @@ void main() {
 @end
 
 @fs fs
+layout(binding = 1) uniform fs_params {
+    float time;
+};
 
 out vec4 frag_color;
 void main() {
-    frag_color = vec4(1.0, 1.0, 1.0, 1.0);
+    float alpha = abs(sin(time / 200));
+    frag_color = vec4(1.0, 1.0, 1.0, alpha);
 }
 @end
 

@@ -1,151 +1,37 @@
 const std = @import("std");
 const zalg = @import("zalgebra");
 const ft = @import("mach-freetype");
-const Buffer = @import("buffer.zig");
 
-const font = @embedFile("assets/JetBrainsMono-Medium.ttf");
+const Buffer = @import("buffer.zig");
+const TextRenderer = @import("text_renderer.zig");
+const CursorRenderer = @import("cursor_renderer.zig");
+
+const cursor_shd = @import("shaders/compiled/cursor.glsl.zig");
+const text_shd = @import("shaders/compiled/text.glsl.zig");
 
 const sokol = @import("sokol");
 const sg = sokol.gfx;
 const sapp = sokol.app;
 const slog = sokol.log;
 const sglue = sokol.glue;
-
-const text_shd = @import("shaders/compiled/text.glsl.zig");
-const cursor_shd = @import("shaders/compiled/cursor.glsl.zig");
+const stime = sokol.time;
 
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 const allocator = gpa.allocator();
 
-const state = struct {
+pub const state = struct {
     var pass_action: sg.PassAction = .{};
-    var text_bind: sg.Bindings = .{};
-    var text_pip: sg.Pipeline = .{};
-    var cursor_bind: sg.Bindings = .{};
-    var cursor_pip: sg.Pipeline = .{};
+    var text_renderer: TextRenderer = undefined;
+    var cursor_renderer: CursorRenderer = undefined;
+    pub var buffer: Buffer = undefined;
 
-    var buffer: Buffer = undefined;
-    var cursor_position = zalg.Vec2.init();
-
-    var vertices: [1024]Vertex = undefined;
-    var glyphs: [128]Glyph = undefined;
-    var atlas_pixels: [ATLAS_W * ATLAS_H]u8 = .{0} ** (ATLAS_W * ATLAS_H);
+    var start_time: f64 = 0;
 };
-
-const ATLAS_W = 512;
-const ATLAS_H = 512;
-
-const Glyph = struct {
-    u0: f32,
-    v0: f32,
-    u1: f32,
-    v1: f32,
-    w: f32,
-    h: f32,
-    bearing_x: f32,
-    bearing_y: f32,
-    advance: i16,
-};
-
-const Vertex = packed struct { x: f32, y: f32, u: f32, v: f32 };
-
-fn buildAtlas() !void {
-    const ftlib = try ft.Library.init();
-    defer ftlib.deinit();
-
-    const face = try ftlib.createFaceMemory(font, 0);
-    try face.setPixelSizes(0, 48);
-
-    var pen_x: usize = 1;
-    var pen_y: usize = 1;
-    var row_h: usize = 0;
-
-    for (32..127) |c| {
-        try face.loadChar(@intCast(c), .{ .render = true });
-
-        const slot = face.glyph();
-        const bmp = slot.bitmap();
-
-        if (pen_x + bmp.width() + 1 >= ATLAS_W) {
-            pen_x = 1;
-            pen_y += row_h + 1;
-            row_h = 0;
-        }
-
-        var y: usize = 0;
-        while (y < bmp.rows()) : (y += 1) {
-            const dst_start = (pen_y + y) * ATLAS_W + pen_x;
-            const src_start = y * bmp.width();
-            std.mem.copyForwards(
-                u8,
-                state.atlas_pixels[dst_start .. dst_start + bmp.width()],
-                bmp.buffer().?[src_start .. src_start + bmp.width()],
-            );
-        }
-
-        state.glyphs[c] = Glyph{
-            .u0 = @as(f32, @floatFromInt(pen_x)) / ATLAS_W,
-            .v0 = @as(f32, @floatFromInt(pen_y)) / ATLAS_H,
-            .u1 = (@as(f32, @floatFromInt(pen_x + bmp.width())) / ATLAS_W),
-            .v1 = (@as(f32, @floatFromInt(pen_y + bmp.rows())) / ATLAS_H),
-            .w = @floatFromInt(bmp.width()),
-            .h = @floatFromInt(bmp.rows()),
-            .bearing_x = @floatFromInt(slot.bitmapLeft()),
-            .bearing_y = @floatFromInt(slot.bitmapTop()),
-            .advance = @as(i16, @intCast(slot.advance().x)) >> 6,
-        };
-
-        pen_x += bmp.width() + 1;
-        row_h = @max(row_h, bmp.rows());
-    }
-}
-
-fn emitQuad(vertex_index: usize, g: Glyph, x: usize, y: usize) void {
-    // x: left y: bottom
-    // y+ = down
-
-    const fx: f32 = @as(f32, @floatFromInt(x)) + g.bearing_x;
-    const fy: f32 = @as(f32, @floatFromInt(y)) - g.bearing_y;
-
-    const p1: Vertex = .{
-        .x = fx,
-        .y = fy,
-        .u = g.u0,
-        .v = g.v0,
-    };
-    const p2: Vertex = .{
-        .x = fx + g.w,
-        .y = fy,
-        .u = g.u1,
-        .v = g.v0,
-    };
-    const p3: Vertex = .{
-        .x = fx + g.w,
-        .y = fy + g.h,
-        .u = g.u1,
-        .v = g.v1,
-    };
-    const p4: Vertex = .{
-        .x = fx,
-        .y = fy + g.h,
-        .u = g.u0,
-        .v = g.v1,
-    };
-
-    state.vertices[vertex_index] = p1;
-    state.vertices[vertex_index + 1] = p2;
-    state.vertices[vertex_index + 2] = p4;
-    state.vertices[vertex_index + 3] = p2;
-    state.vertices[vertex_index + 4] = p3;
-    state.vertices[vertex_index + 5] = p4;
-}
 
 export fn init() void {
     state.buffer = Buffer.init(4096, allocator) catch unreachable;
 
-    buildAtlas() catch |e| {
-        std.debug.print("failed to build atlas {}\n", .{e});
-    };
+    stime.setup();
 
     sg.setup(.{
         .environment = sglue.environment(),
@@ -153,6 +39,11 @@ export fn init() void {
             .func = slog.func,
         },
     });
+
+    state.start_time = stime.ms(stime.now());
+
+    state.text_renderer = TextRenderer.init();
+    state.cursor_renderer = CursorRenderer.init();
 
     state.pass_action.colors[0] = .{
         .load_action = .CLEAR,
@@ -163,80 +54,6 @@ export fn init() void {
             .a = 1.0,
         },
     };
-
-    // cursor
-    state.cursor_bind.vertex_buffers[0] = sg.makeBuffer(.{
-        .data = sg.asRange(
-            &[_]f32{
-                -0.5, 0.5,
-                0.5,  0.5,
-                -0.5, -0.5,
-                0.5,  0.5,
-                0.5,  -0.5,
-                -0.5, -0.5,
-            },
-        ),
-    });
-
-    state.cursor_pip = sg.makePipeline(
-        .{
-            .shader = sg.makeShader(cursor_shd.cursorShaderDesc(sg.queryBackend())),
-            .layout = init: {
-                var l = sg.VertexLayoutState{};
-                l.buffers[0].step_func = .PER_VERTEX;
-                l.attrs[cursor_shd.ATTR_cursor_pos] = .{ .format = .FLOAT2 };
-                break :init l;
-            },
-        },
-    );
-
-    // text
-    state.text_bind.vertex_buffers[0] = sg.makeBuffer(.{
-        .usage = .{ .dynamic_update = true },
-        .size = @sizeOf(Vertex) * 1024,
-    });
-
-    state.text_bind.samplers[text_shd.SMP_smp] = sg.makeSampler(.{
-        .mag_filter = .LINEAR,
-        .min_filter = .LINEAR,
-        .wrap_u = .CLAMP_TO_EDGE,
-        .wrap_v = .CLAMP_TO_EDGE,
-    });
-
-    var image_descriptor: sg.ImageDesc = .{
-        .width = ATLAS_W,
-        .height = ATLAS_H,
-        .pixel_format = .R8,
-    };
-    image_descriptor.data.subimage[0][0] = sg.asRange(&state.atlas_pixels);
-    state.text_bind.images[text_shd.IMG_tex] = sg.makeImage(image_descriptor);
-
-    var pip_descriptor: sg.PipelineDesc = .{
-        .cull_mode = .BACK,
-        .shader = sg.makeShader(text_shd.textShaderDesc(sg.queryBackend())),
-        .depth = .{
-            .compare = .LESS_EQUAL,
-            .write_enabled = true,
-        },
-        .layout = init: {
-            var l: sg.VertexLayoutState = .{};
-            l.buffers[0].step_func = .PER_VERTEX;
-            l.attrs[text_shd.ATTR_text_pos] = .{
-                .format = .FLOAT2,
-            };
-            l.attrs[text_shd.ATTR_text_uv0] = .{
-                .format = .FLOAT2,
-            };
-            break :init l;
-        },
-    };
-    pip_descriptor.colors[0].blend.enabled = true;
-    pip_descriptor.colors[0].blend.src_factor_rgb = .SRC_ALPHA;
-    pip_descriptor.colors[0].blend.dst_factor_rgb = .ONE_MINUS_SRC_ALPHA;
-    pip_descriptor.colors[0].blend.src_factor_alpha = .SRC_ALPHA;
-    pip_descriptor.colors[0].blend.dst_factor_alpha = .ONE_MINUS_SRC_ALPHA;
-
-    state.text_pip = sg.makePipeline(pip_descriptor);
 }
 
 export fn frame() void {
@@ -252,8 +69,13 @@ export fn frame() void {
     while (char_index < state.buffer.getTextLength()) {
         for (state.buffer.getBeforeGap()) |char| {
             if (char != '\n') {
-                const glyph = state.glyphs[char];
-                emitQuad(vertex_index, state.glyphs[char], pen_x, pen_y);
+                const glyph = state.text_renderer.glyphs[char];
+                state.text_renderer.emitQuad(
+                    vertex_index,
+                    state.text_renderer.glyphs[char],
+                    pen_x,
+                    pen_y,
+                );
                 pen_x += @intCast(glyph.advance);
                 vertex_index += 6;
             } else {
@@ -268,8 +90,13 @@ export fn frame() void {
 
         for (state.buffer.getAfterGap()) |char| {
             if (char != '\n') {
-                const glyph = state.glyphs[char];
-                emitQuad(vertex_index, state.glyphs[char], pen_x, pen_y);
+                const glyph = state.text_renderer.glyphs[char];
+                state.text_renderer.emitQuad(
+                    vertex_index,
+                    state.text_renderer.glyphs[char],
+                    pen_x,
+                    pen_y,
+                );
                 pen_x += @intCast(glyph.advance);
                 vertex_index += 6;
             } else {
@@ -280,7 +107,7 @@ export fn frame() void {
         }
     }
 
-    const vertex_count = vertex_index + 1;
+    const vertex_count = vertex_index;
 
     const ortho = zalg.orthographic(
         0.0,
@@ -303,14 +130,18 @@ export fn frame() void {
         .mvp = ortho.mul(cursor_position.mul(cursor_scale)),
     };
 
+    const cursor_fs_params: cursor_shd.FsParams = .{
+        .time = @floatCast(stime.ms(stime.now()) - state.start_time),
+    };
+
     const text_vs_params: text_shd.VsParams = .{
         .mvp = ortho,
     };
 
     if (state.buffer.getTextLength() > 0) {
         sg.updateBuffer(
-            state.text_bind.vertex_buffers[0],
-            sg.asRange(state.vertices[0..vertex_count]),
+            state.text_renderer.bindings.vertex_buffers[0],
+            sg.asRange(state.text_renderer.vertices[0..vertex_count]),
         );
     }
 
@@ -319,14 +150,15 @@ export fn frame() void {
         .action = state.pass_action,
     });
     // draw text
-    sg.applyPipeline(state.text_pip);
-    sg.applyBindings(state.text_bind);
+    sg.applyPipeline(state.text_renderer.pipeline);
+    sg.applyBindings(state.text_renderer.bindings);
     sg.applyUniforms(text_shd.UB_vs_params, sg.asRange(&text_vs_params));
     sg.draw(0, @intCast(vertex_count), 1);
     // draw cursor
-    sg.applyPipeline(state.cursor_pip);
-    sg.applyBindings(state.cursor_bind);
+    sg.applyPipeline(state.cursor_renderer.pipeline);
+    sg.applyBindings(state.cursor_renderer.bindings);
     sg.applyUniforms(cursor_shd.UB_vs_params, sg.asRange(&cursor_vs_params));
+    sg.applyUniforms(cursor_shd.UB_fs_params, sg.asRange(&cursor_fs_params));
     sg.draw(0, 6, 1);
     sg.endPass();
     sg.commit();
