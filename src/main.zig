@@ -21,12 +21,18 @@ const stime = sokol.time;
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 const allocator = gpa.allocator();
 
+const Mode = enum { normal, insert, visual };
+
 pub const state = struct {
     var pass_action: sg.PassAction = .{};
     var text_renderer: TextRenderer = undefined;
     var cursor_renderer: CursorRenderer = undefined;
     var range_renderer: RangeRenderer = undefined;
     pub var buffer: Buffer = undefined;
+    var mode: Mode = .normal;
+
+    var cursor_nwidth: f32 = 0.0;
+    var cursor_nchar_x_offset: f32 = 0.0;
 
     var start_time: f64 = 0;
     var viewport = struct {
@@ -52,6 +58,9 @@ export fn init() void {
     state.cursor_renderer = CursorRenderer.init();
     state.range_renderer = RangeRenderer.init();
     state.text_renderer.initRenderer();
+
+    state.cursor_nwidth = state.text_renderer.glyphs[97].w;
+    state.cursor_nchar_x_offset = state.text_renderer.glyphs[97].bearing_x;
 
     state.viewport.right = sapp.widthf();
     state.viewport.bottom = sapp.heightf();
@@ -98,11 +107,11 @@ fn drawChar(ds: *DrawingState, char: u8) void {
 
     if (char != '\n') {
         const glyph = state.text_renderer.glyphs[char];
-        state.text_renderer.emitQuad(
-            ds.vertex_index,
+        state.text_renderer.emitInstanceData(
             state.text_renderer.glyphs[char],
             ds.pen_x,
             ds.pen_y,
+            if (ds.char_index == state.buffer.gap_start) zalg.Vec4.new(0.0, 0.0, 0.0, 1.0) else zalg.Vec4.one(),
         );
         ds.pen_x += @floatFromInt(glyph.advance);
         ds.vertex_index += 6;
@@ -124,6 +133,7 @@ export fn frame() void {
     var drawing_state = DrawingState{};
 
     state.range_renderer.setupDraw();
+    state.text_renderer.setupDraw();
 
     for (state.buffer.getBeforeGap()) |char| {
         drawChar(&drawing_state, char);
@@ -144,18 +154,16 @@ export fn frame() void {
         );
     }
 
-    if (drawing_state.cursor_y > state.viewport.bottom) {
+    if (drawing_state.cursor_y + 10.0 > state.viewport.bottom) {
         state.viewport.bottom = drawing_state.cursor_y;
         state.viewport.top = state.viewport.bottom - sapp.heightf();
-    } else if (drawing_state.cursor_y < state.viewport.top) {
+    } else if (drawing_state.cursor_y < state.viewport.top + drawing_state.row_height) {
         state.viewport.top = drawing_state.cursor_y - drawing_state.row_height;
         state.viewport.bottom = state.viewport.top + sapp.heightf();
     } else {
         state.viewport.bottom = state.viewport.top + sapp.heightf();
     }
     state.viewport.right = sapp.widthf();
-
-    const vertex_count = drawing_state.vertex_index;
 
     const ortho = zalg.orthographic(
         state.viewport.left,
@@ -166,20 +174,23 @@ export fn frame() void {
         1.0,
     );
 
+    const cursor_width: f32 = if (state.mode == .normal or state.mode == .visual) state.cursor_nwidth else 2.0;
+    const cursor_x_offset: f32 = if (state.mode == .normal or state.mode == .visual) state.cursor_nchar_x_offset else 0.0;
+
     const cursor_scale = zalg.Mat4.scale(
         zalg.Mat4.identity(),
-        zalg.Vec3.new(2.0, 24.0, 0.0),
+        zalg.Vec3.new(cursor_width, 28.0, 0.0),
     );
     const cursor_position = zalg.Mat4.translate(
         zalg.Mat4.identity(),
-        zalg.Vec3.new(drawing_state.cursor_x, drawing_state.cursor_y - 12.0, 0.0),
+        zalg.Vec3.new(drawing_state.cursor_x + cursor_x_offset + (cursor_width / 2.0), drawing_state.cursor_y - 10.0, 0.0),
     );
     const cursor_vs_params: cursor_shd.VsParams = .{
         .mvp = ortho.mul(cursor_position.mul(cursor_scale)),
     };
 
     const cursor_fs_params: cursor_shd.FsParams = .{
-        .time = @floatCast(stime.ms(stime.now()) - state.start_time),
+        .time = if (state.mode == .insert) @floatCast(stime.ms(stime.now()) - state.start_time) else 0,
     };
 
     const text_vs_params: text_shd.VsParams = .{
@@ -188,15 +199,8 @@ export fn frame() void {
 
     if (state.buffer.getTextLength() > 0) {
         sg.updateBuffer(
-            state.text_renderer.bindings.vertex_buffers[0],
-            sg.asRange(state.text_renderer.vertices[0..vertex_count]),
-        );
-    }
-
-    if (state.range_renderer.vertex_count > 0) {
-        sg.updateBuffer(
-            state.range_renderer.bindings.vertex_buffers[0],
-            sg.asRange(state.range_renderer.vertices[0..state.range_renderer.vertex_count]),
+            state.text_renderer.bindings.vertex_buffers[1],
+            sg.asRange(state.text_renderer.instance_data[0..state.text_renderer.instance_count]),
         );
     }
 
@@ -209,147 +213,186 @@ export fn frame() void {
     sg.applyBindings(state.range_renderer.bindings);
     sg.applyUniforms(range_shd.UB_vs_params, sg.asRange(&range_shd.VsParams{ .mvp = ortho }));
     sg.draw(0, @intCast(state.range_renderer.vertex_count), 1);
-    // draw text
-    sg.applyPipeline(state.text_renderer.pipeline);
-    sg.applyBindings(state.text_renderer.bindings);
-    sg.applyUniforms(text_shd.UB_vs_params, sg.asRange(&text_vs_params));
-    sg.draw(0, @intCast(vertex_count), 1);
     // draw cursor
     sg.applyPipeline(state.cursor_renderer.pipeline);
     sg.applyBindings(state.cursor_renderer.bindings);
     sg.applyUniforms(cursor_shd.UB_vs_params, sg.asRange(&cursor_vs_params));
     sg.applyUniforms(cursor_shd.UB_fs_params, sg.asRange(&cursor_fs_params));
     sg.draw(0, 6, 1);
+    // draw text
+    sg.applyPipeline(state.text_renderer.pipeline);
+    sg.applyBindings(state.text_renderer.bindings);
+    sg.applyUniforms(text_shd.UB_vs_params, sg.asRange(&text_vs_params));
+    sg.draw(0, 6, @intCast(state.text_renderer.instance_count));
     sg.endPass();
     sg.commit();
 }
 
 export fn event(e: [*c]const sapp.Event) void {
     if (e) |ev| {
-        switch (ev.*.type) {
-            .KEY_DOWN => {
-                switch (ev.*.key_code) {
-                    .BACKSPACE => {
-                        if (state.buffer.hasRange()) {
-                            state.buffer.deleteRange() catch |err| {
+        switch (state.mode) {
+            .normal => switch (ev.*.type) {
+                .KEY_DOWN => {
+                    switch (ev.*.key_code) {
+                        .H => {
+                            if (state.buffer.gap_start == 0) return;
+                            state.buffer.moveGap(state.buffer.gap_start - 1) catch |err| {
                                 std.debug.print("{}\n", .{err});
                             };
-                            state.buffer.clearRange();
-                        } else {
-                            if (state.buffer.getBeforeGap().len > 0) {
-                                state.buffer.deleteChar() catch unreachable;
-                            }
-                        }
-                    },
-                    .ENTER => {
-                        if (state.buffer.hasRange()) {
-                            state.buffer.deleteRange() catch |err| {
+                            state.buffer.desired_offset = state.buffer.getLeftOffset();
+                        },
+                        .L => {
+                            state.buffer.moveGap(state.buffer.gap_start + 1) catch |err| {
                                 std.debug.print("{}\n", .{err});
                             };
-                            state.buffer.clearRange();
-                        }
-                        state.buffer.addChar('\n') catch unreachable;
-                    },
-                    .LEFT => {
-                        if (ev.*.modifiers == sapp.modifier_shift) {
-                            state.buffer.rangeLeft() catch |err| {
+                            state.buffer.desired_offset = state.buffer.getLeftOffset();
+                        },
+                        .K => {
+                            state.buffer.moveGapUpByLine() catch |err| {
                                 std.debug.print("{}\n", .{err});
                             };
-                        } else {
-                            state.buffer.clearRange();
-                        }
-                        if (state.buffer.gap_start == 0) return;
-                        state.buffer.moveGap(state.buffer.gap_start - 1) catch |err| {
-                            std.debug.print("{}\n", .{err});
-                        };
-                    },
-                    .RIGHT => {
-                        if (ev.*.modifiers == sapp.modifier_shift) {
-                            state.buffer.rangeRight() catch |err| {
+                        },
+                        .J => {
+                            state.buffer.moveGapDownByLine() catch |err| {
                                 std.debug.print("{}\n", .{err});
                             };
-                        } else {
-                            state.buffer.clearRange();
-                        }
-                        state.buffer.moveGap(state.buffer.gap_start + 1) catch |err| {
-                            std.debug.print("{}\n", .{err});
-                        };
-                    },
-                    .UP => {
-                        if (ev.*.modifiers == sapp.modifier_shift) {
-                            state.buffer.rangeUp() catch |err| {
+                        },
+                        .X => {
+                            state.buffer.deleteCharRight() catch |err| {
                                 std.debug.print("{}\n", .{err});
                             };
-                        } else {
-                            state.buffer.clearRange();
-                        }
-                        state.buffer.moveGapUpByLine() catch |err| {
-                            std.debug.print("{}\n", .{err});
-                        };
-                    },
-                    .DOWN => {
-                        if (ev.*.modifiers == sapp.modifier_shift) {
-                            state.buffer.rangeDown() catch |err| {
-                                std.debug.print("{}\n", .{err});
-                            };
-                        } else {
-                            state.buffer.clearRange();
-                        }
-                        state.buffer.moveGapDownByLine() catch |err| {
-                            std.debug.print("{}\n", .{err});
-                        };
-                    },
-                    .C => {
-                        if (ev.*.modifiers == sapp.modifier_ctrl and !ev.*.key_repeat) {
-                            if (!state.buffer.hasRange()) return;
-                            const clipboard_buffer = allocator.alloc(u8, state.buffer.getRangeLength() + 1) catch unreachable;
-                            defer allocator.free(clipboard_buffer);
-                            state.buffer.getRangeText(clipboard_buffer) catch |err| {
-                                std.debug.print("{}", .{err});
-                            };
-                            clipboard_buffer[clipboard_buffer.len - 1] = 0;
-                            sapp.setClipboardString(@as([:0]const u8, @ptrCast(@constCast(clipboard_buffer))));
-                        }
-                    },
-                    .X => {
-                        if (ev.*.modifiers == sapp.modifier_ctrl and !ev.*.key_repeat) {
-                            if (!state.buffer.hasRange()) return;
-                            const clipboard_buffer = allocator.alloc(u8, state.buffer.getRangeLength() + 1) catch unreachable;
-                            defer allocator.free(clipboard_buffer);
-                            state.buffer.getRangeText(clipboard_buffer) catch {};
-                            state.buffer.deleteRange() catch {};
-                            state.buffer.clearRange();
-                            clipboard_buffer[clipboard_buffer.len - 1] = 0;
-                            sapp.setClipboardString(@as([:0]const u8, @ptrCast(@constCast(clipboard_buffer))));
-                        }
-                    },
-                    .V => {
-                        if (ev.*.modifiers == sapp.modifier_ctrl) {
+                        },
+                        else => {},
+                    }
+                },
+                else => {},
+            },
+            .insert => switch (ev.*.type) {
+                .KEY_DOWN => {
+                    switch (ev.*.key_code) {
+                        .BACKSPACE => {
                             if (state.buffer.hasRange()) {
-                                state.buffer.deleteRange() catch {};
+                                state.buffer.deleteRange() catch |err| {
+                                    std.debug.print("{}\n", .{err});
+                                };
+                                state.buffer.clearRange();
+                            } else {
+                                if (state.buffer.getBeforeGap().len > 0) {
+                                    state.buffer.deleteCharLeft() catch unreachable;
+                                }
+                            }
+                        },
+                        .ENTER => {
+                            if (state.buffer.hasRange()) {
+                                state.buffer.deleteRange() catch |err| {
+                                    std.debug.print("{}\n", .{err});
+                                };
                                 state.buffer.clearRange();
                             }
-                            const clipboard_string = sapp.getClipboardString();
-                            state.buffer.addString(@ptrCast(clipboard_string)) catch |err| {
+                            state.buffer.addChar('\n') catch unreachable;
+                        },
+                        .LEFT => {
+                            if (ev.*.modifiers == sapp.modifier_shift) {
+                                state.buffer.rangeLeft() catch |err| {
+                                    std.debug.print("{}\n", .{err});
+                                };
+                            } else {
+                                state.buffer.clearRange();
+                            }
+                            if (state.buffer.gap_start == 0) return;
+                            state.buffer.moveGap(state.buffer.gap_start - 1) catch |err| {
                                 std.debug.print("{}\n", .{err});
                             };
-                        }
-                    },
-                    else => {},
-                }
-            },
-            .CHAR => {
-                if (state.buffer.hasRange()) {
-                    state.buffer.deleteRange() catch |err| {
+                        },
+                        .RIGHT => {
+                            if (ev.*.modifiers == sapp.modifier_shift) {
+                                state.buffer.rangeRight() catch |err| {
+                                    std.debug.print("{}\n", .{err});
+                                };
+                            } else {
+                                state.buffer.clearRange();
+                            }
+                            state.buffer.moveGap(state.buffer.gap_start + 1) catch |err| {
+                                std.debug.print("{}\n", .{err});
+                            };
+                        },
+                        .UP => {
+                            if (ev.*.modifiers == sapp.modifier_shift) {
+                                state.buffer.rangeUp() catch |err| {
+                                    std.debug.print("{}\n", .{err});
+                                };
+                            } else {
+                                state.buffer.clearRange();
+                            }
+                            state.buffer.moveGapUpByLine() catch |err| {
+                                std.debug.print("{}\n", .{err});
+                            };
+                        },
+                        .DOWN => {
+                            if (ev.*.modifiers == sapp.modifier_shift) {
+                                state.buffer.rangeDown() catch |err| {
+                                    std.debug.print("{}\n", .{err});
+                                };
+                            } else {
+                                state.buffer.clearRange();
+                            }
+                            state.buffer.moveGapDownByLine() catch |err| {
+                                std.debug.print("{}\n", .{err});
+                            };
+                        },
+                        .C => {
+                            if (ev.*.modifiers == sapp.modifier_ctrl and !ev.*.key_repeat) {
+                                if (!state.buffer.hasRange()) return;
+                                const clipboard_buffer = allocator.alloc(u8, state.buffer.getRangeLength() + 1) catch unreachable;
+                                defer allocator.free(clipboard_buffer);
+                                state.buffer.getRangeText(clipboard_buffer) catch |err| {
+                                    std.debug.print("{}", .{err});
+                                };
+                                clipboard_buffer[clipboard_buffer.len - 1] = 0;
+                                sapp.setClipboardString(@as([:0]const u8, @ptrCast(@constCast(clipboard_buffer))));
+                            }
+                        },
+                        .X => {
+                            if (ev.*.modifiers == sapp.modifier_ctrl and !ev.*.key_repeat) {
+                                if (!state.buffer.hasRange()) return;
+                                const clipboard_buffer = allocator.alloc(u8, state.buffer.getRangeLength() + 1) catch unreachable;
+                                defer allocator.free(clipboard_buffer);
+                                state.buffer.getRangeText(clipboard_buffer) catch {};
+                                state.buffer.deleteRange() catch {};
+                                state.buffer.clearRange();
+                                clipboard_buffer[clipboard_buffer.len - 1] = 0;
+                                sapp.setClipboardString(@as([:0]const u8, @ptrCast(@constCast(clipboard_buffer))));
+                            }
+                        },
+                        .V => {
+                            if (ev.*.modifiers == sapp.modifier_ctrl) {
+                                if (state.buffer.hasRange()) {
+                                    state.buffer.deleteRange() catch {};
+                                    state.buffer.clearRange();
+                                }
+                                const clipboard_string = sapp.getClipboardString();
+                                state.buffer.addString(@ptrCast(clipboard_string)) catch |err| {
+                                    std.debug.print("{}\n", .{err});
+                                };
+                            }
+                        },
+                        else => {},
+                    }
+                },
+                .CHAR => {
+                    if (state.buffer.hasRange()) {
+                        state.buffer.deleteRange() catch |err| {
+                            std.debug.print("{}\n", .{err});
+                        };
+                        state.buffer.clearRange();
+                    }
+                    state.buffer.addChar(@intCast(ev.*.char_code)) catch |err| {
                         std.debug.print("{}\n", .{err});
                     };
-                    state.buffer.clearRange();
-                }
-                state.buffer.addChar(@intCast(ev.*.char_code)) catch |err| {
-                    std.debug.print("{}\n", .{err});
-                };
+                },
+                else => {},
             },
-            else => {},
+            .visual => {},
         }
     }
 }
@@ -371,10 +414,10 @@ pub fn main() !void {
         std.debug.print("file size: {}\n", .{file_stats.size});
         const buffer_size = if (file_stats.size == 0) Buffer.INITIAL_BUFFER_SIZE else try std.math.ceilPowerOfTwo(usize, @intCast(file_stats.size + Buffer.INITIAL_BUFFER_SIZE));
         state.buffer = try Buffer.initFromFile(@ptrCast(file_path), file_stats.size, buffer_size, allocator);
-        state.text_renderer = try TextRenderer.init(try std.math.ceilPowerOfTwo(usize, buffer_size * 6), allocator);
+        state.text_renderer = try TextRenderer.init(buffer_size, allocator);
     } else {
         state.buffer = try Buffer.init(Buffer.INITIAL_BUFFER_SIZE, allocator);
-        state.text_renderer = try TextRenderer.init(try std.math.ceilPowerOfTwo(usize, Buffer.INITIAL_BUFFER_SIZE * 6), allocator);
+        state.text_renderer = try TextRenderer.init(Buffer.INITIAL_BUFFER_SIZE, allocator);
     }
 
     args.deinit();

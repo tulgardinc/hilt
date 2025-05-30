@@ -16,12 +16,18 @@ pipeline: sg.Pipeline,
 glyphs: [128]Glyph = undefined,
 font_atlas: [ATLAS_W * ATLAS_H]u8 = .{0} ** (ATLAS_W * ATLAS_H),
 
-vertices: []TextVertex,
+instance_count: usize = 0,
+instance_data: []TextIndexData,
 allocator: std.mem.Allocator,
 
 const Self = @This();
 
-const TextVertex = packed struct { x: f32, y: f32, u: f32, v: f32 };
+const TextIndexData = packed struct {
+    offset: packed struct { x: f32, y: f32 },
+    dims: packed struct { w: f32, h: f32 },
+    uv_rect: packed struct { u_off: f32, v_off: f32, w: f32, h: f32 },
+    color: packed struct { r: f32, g: f32, b: f32, a: f32 },
+};
 
 const Glyph = struct {
     u0: f32,
@@ -35,19 +41,19 @@ const Glyph = struct {
     advance: i16,
 };
 
-pub fn init(vertex_buffer_size: usize, allocator: std.mem.Allocator) !Self {
+pub fn init(max_char_count: usize, allocator: std.mem.Allocator) !Self {
     const text_renderer: Self = .{
         .bindings = sg.Bindings{},
         .pipeline = undefined,
         .allocator = allocator,
-        .vertices = try allocator.alloc(TextVertex, vertex_buffer_size),
+        .instance_data = try allocator.alloc(TextIndexData, max_char_count),
     };
 
     return text_renderer;
 }
 
 pub fn deinit(self: *Self) void {
-    self.allocator.free(self.vertices);
+    self.allocator.free(self.instance_data);
 }
 
 pub fn initRenderer(self: *Self) void {
@@ -56,8 +62,21 @@ pub fn initRenderer(self: *Self) void {
     };
 
     self.bindings.vertex_buffers[0] = sg.makeBuffer(.{
+        .data = sg.asRange(
+            &[_]f32{
+                0.0, 0.0, 0.0, 0.0,
+                1.0, 0.0, 1.0, 0.0,
+                0.0, 1.0, 0.0, 1.0,
+                1.0, 0.0, 1.0, 0.0,
+                1.0, 1.0, 1.0, 1.0,
+                0.0, 1.0, 0.0, 1.0,
+            },
+        ),
+    });
+
+    self.bindings.vertex_buffers[1] = sg.makeBuffer(.{
         .usage = .{ .dynamic_update = true },
-        .size = self.vertices.len * @sizeOf(TextVertex),
+        .size = self.instance_data.len * @sizeOf(TextIndexData),
     });
 
     self.bindings.samplers[text_shd.SMP_smp] = sg.makeSampler(.{
@@ -87,12 +106,33 @@ pub fn initRenderer(self: *Self) void {
             l.buffers[0].step_func = .PER_VERTEX;
             l.attrs[text_shd.ATTR_text_pos] = .{
                 .format = .FLOAT2,
+                .buffer_index = 0,
             };
-            l.attrs[text_shd.ATTR_text_uv0] = .{
+            l.attrs[text_shd.ATTR_text_uv_in] = .{
                 .format = .FLOAT2,
+                .buffer_index = 0,
+            };
+
+            l.buffers[1].step_func = .PER_INSTANCE;
+            l.attrs[text_shd.ATTR_text_offset] = .{
+                .format = .FLOAT2,
+                .buffer_index = 1,
+            };
+            l.attrs[text_shd.ATTR_text_dims] = .{
+                .format = .FLOAT2,
+                .buffer_index = 1,
+            };
+            l.attrs[text_shd.ATTR_text_uv_rect_in] = .{
+                .format = .FLOAT4,
+                .buffer_index = 1,
+            };
+            l.attrs[text_shd.ATTR_text_col_in] = .{
+                .format = .FLOAT4,
+                .buffer_index = 1,
             };
             break :init l;
         },
+        .face_winding = .CW,
     };
     pip_descriptor.colors[0].blend.enabled = true;
     pip_descriptor.colors[0].blend.src_factor_rgb = .SRC_ALPHA;
@@ -154,42 +194,20 @@ fn buildAtlas(self: *Self) !void {
     }
 }
 
-pub fn emitQuad(self: *Self, vertex_index: usize, g: Glyph, x: f32, y: f32) void {
+pub fn setupDraw(self: *Self) void {
+    self.instance_count = 0;
+}
+
+pub fn emitInstanceData(self: *Self, g: Glyph, x: f32, y: f32, col: zalg.Vec4) void {
     // x: left y: bottom
     // y+ = down
 
-    const fx: f32 = x + g.bearing_x;
-    const fy: f32 = y - g.bearing_y;
+    self.instance_data[self.instance_count] = .{
+        .color = .{ .r = col.x(), .g = col.y(), .b = col.z(), .a = col.w() },
+        .offset = .{ .x = x + g.bearing_x, .y = y - g.bearing_y },
+        .dims = .{ .w = g.w, .h = g.h },
+        .uv_rect = .{ .u_off = g.u0, .v_off = g.v0, .w = g.u1 - g.u0, .h = g.v1 - g.v0 },
+    };
 
-    const p1: TextVertex = .{
-        .x = fx,
-        .y = fy,
-        .u = g.u0,
-        .v = g.v0,
-    }; // top left
-    const p2: TextVertex = .{
-        .x = fx + g.w,
-        .y = fy,
-        .u = g.u1,
-        .v = g.v0,
-    }; // top right
-    const p3: TextVertex = .{
-        .x = fx + g.w,
-        .y = fy + g.h,
-        .u = g.u1,
-        .v = g.v1,
-    }; // bottom right
-    const p4: TextVertex = .{
-        .x = fx,
-        .y = fy + g.h,
-        .u = g.u0,
-        .v = g.v1,
-    }; // bottom left
-
-    self.vertices[vertex_index] = p1;
-    self.vertices[vertex_index + 1] = p2;
-    self.vertices[vertex_index + 2] = p4;
-    self.vertices[vertex_index + 3] = p2;
-    self.vertices[vertex_index + 4] = p3;
-    self.vertices[vertex_index + 5] = p4;
+    self.instance_count += 1;
 }

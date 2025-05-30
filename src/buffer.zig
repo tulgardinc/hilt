@@ -9,6 +9,7 @@ gap_start: usize,
 gap_end: usize,
 range_start: ?usize = null,
 range_end: usize = 0,
+desired_offset: usize = 0,
 
 const Self = @This();
 
@@ -52,10 +53,28 @@ pub fn addString(self: *Self, chars: []const u8) !void {
     self.gap_start += chars.len;
 }
 
-pub fn deleteChar(self: *Self) !void {
+pub fn deleteCharLeft(self: *Self) !void {
     if (self.gap_start <= 0) return error.NoCharacterToRemove;
 
     self.gap_start -= 1;
+}
+
+pub fn deleteCharRight(self: *Self) !void {
+    if (self.gap_end == self.data.len) return error.NoCharacterToRemove;
+
+    self.gap_end += 1;
+}
+
+pub fn getLeftOffset(self: *const Self) usize {
+    var i: usize = self.gap_start;
+    while (i > 0) {
+        i -= 1;
+        if (self.data[i] == '\n') {
+            i += 1;
+            break;
+        }
+    }
+    return self.gap_start - i;
 }
 
 pub fn moveGap(self: *Self, char_index: usize) !void {
@@ -100,28 +119,26 @@ pub fn clearRange(self: *Self) void {
 }
 
 fn getColumnUpperLine(self: *const Self) usize {
-    var byte_offset: ?usize = null;
+    var in_upper_line = false;
     var i = self.gap_start;
     var upper_line_length: usize = 0;
     // move back from cursor
     while (i > 0) {
         i -= 1;
-        if (byte_offset != null) {
+        if (in_upper_line) {
             // byte_offset != null = found the first \n
             upper_line_length += 1;
         }
         if (self.data[i] == '\n') {
-            if (byte_offset) |off| {
+            if (in_upper_line) {
                 // move to either end of line above, or by offset
-                return i + @min(off, upper_line_length);
+                return i + @min(self.desired_offset + 1, upper_line_length);
             } else {
                 // found the first \n
-                byte_offset = self.gap_start - i;
+                in_upper_line = true;
             }
-        } else if (i == 0 and byte_offset != null) {
-            // byte offset is off by one if i = 0
-            byte_offset.? -= 1;
-            return i + @min(byte_offset.?, upper_line_length);
+        } else if (i == 0 and in_upper_line) {
+            return i + @min(self.desired_offset + 1, upper_line_length);
         }
     }
 
@@ -129,28 +146,16 @@ fn getColumnUpperLine(self: *const Self) usize {
 }
 
 fn getColumnLowerLine(self: *const Self) usize {
-    var byte_offset: usize = 0;
-    var bidx = self.gap_start;
     var lower_line_length: usize = 0;
-    while (bidx > 0) {
-        bidx -= 1;
-        if (self.data[bidx] == '\n') {
-            byte_offset = self.gap_start - bidx - 1;
-            break;
-        }
-        if (bidx == 0) {
-            byte_offset = self.gap_start - bidx;
-        }
-    }
 
     var found_first_break = false;
     for (self.gap_end..self.data.len) |fidx| {
         if (found_first_break) {
-            lower_line_length += 1;
-
-            if (lower_line_length - 1 == byte_offset) {
+            if (lower_line_length == self.desired_offset) {
                 return fidx - (self.gap_end - self.gap_start);
             }
+
+            lower_line_length += 1;
         }
         if (self.data[fidx] == '\n') {
             if (!found_first_break) {
@@ -158,9 +163,7 @@ fn getColumnLowerLine(self: *const Self) usize {
                 continue;
             }
 
-            if (lower_line_length == byte_offset) {
-                return fidx - (self.gap_end - self.gap_start);
-            }
+            return fidx - (self.gap_end - self.gap_start);
         }
     }
 

@@ -20,7 +20,7 @@ layout(binding = 1) uniform fs_params {
 
 out vec4 frag_color;
 void main() {
-    float alpha = abs(sin(time / 200));
+    float alpha = abs(cos(time / 200));
     frag_color = vec4(1.0, 1.0, 1.0, alpha);
 }
 @end
