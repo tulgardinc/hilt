@@ -29,6 +29,12 @@ pub const state = struct {
     pub var buffer: Buffer = undefined;
 
     var start_time: f64 = 0;
+    var viewport = struct {
+        top: f32 = 0,
+        bottom: f32 = 0,
+        left: f32 = 0,
+        right: f32 = 0,
+    }{};
 };
 
 export fn init() void {
@@ -47,6 +53,9 @@ export fn init() void {
     state.range_renderer = RangeRenderer.init();
     state.text_renderer.initRenderer();
 
+    state.viewport.right = sapp.widthf();
+    state.viewport.bottom = sapp.heightf();
+
     state.pass_action.colors[0] = .{
         .load_action = .CLEAR,
         .clear_value = .{
@@ -61,7 +70,7 @@ export fn init() void {
 const DrawingState = struct {
     pen_x: f32 = 20.0,
     pen_y: f32 = 100.0,
-    row_height: f32 = 50.0,
+    row_height: f32 = 30.0,
 
     cursor_x: f32 = 0.0,
     cursor_y: f32 = 100.0,
@@ -135,24 +144,35 @@ export fn frame() void {
         );
     }
 
+    if (drawing_state.cursor_y > state.viewport.bottom) {
+        state.viewport.bottom = drawing_state.cursor_y;
+        state.viewport.top = state.viewport.bottom - sapp.heightf();
+    } else if (drawing_state.cursor_y < state.viewport.top) {
+        state.viewport.top = drawing_state.cursor_y - drawing_state.row_height;
+        state.viewport.bottom = state.viewport.top + sapp.heightf();
+    } else {
+        state.viewport.bottom = state.viewport.top + sapp.heightf();
+    }
+    state.viewport.right = sapp.widthf();
+
     const vertex_count = drawing_state.vertex_index;
 
     const ortho = zalg.orthographic(
-        0.0,
-        sapp.widthf(),
-        sapp.heightf(),
-        0.0,
+        state.viewport.left,
+        state.viewport.right,
+        state.viewport.bottom,
+        state.viewport.top,
         -1.0,
         1.0,
     );
 
     const cursor_scale = zalg.Mat4.scale(
         zalg.Mat4.identity(),
-        zalg.Vec3.new(4.0, 45.0, 0.0),
+        zalg.Vec3.new(2.0, 24.0, 0.0),
     );
     const cursor_position = zalg.Mat4.translate(
         zalg.Mat4.identity(),
-        zalg.Vec3.new(drawing_state.cursor_x, drawing_state.cursor_y - 22.0, 0.0),
+        zalg.Vec3.new(drawing_state.cursor_x, drawing_state.cursor_y - 12.0, 0.0),
     );
     const cursor_vs_params: cursor_shd.VsParams = .{
         .mvp = ortho.mul(cursor_position.mul(cursor_scale)),

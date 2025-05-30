@@ -108,7 +108,7 @@ fn buildAtlas(self: *Self) !void {
     defer ftlib.deinit();
 
     const face = try ftlib.createFaceMemory(font, 0);
-    try face.setPixelSizes(0, 48);
+    try face.setPixelSizes(0, 24);
 
     var pen_x: usize = 1;
     var pen_y: usize = 1;
