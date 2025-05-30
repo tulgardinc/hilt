@@ -286,12 +286,22 @@ export fn event(e: [*c]const sapp.Event) void {
                             if (!state.buffer.hasRange()) return;
                             const clipboard_buffer = allocator.alloc(u8, state.buffer.getRangeLength() + 1) catch unreachable;
                             defer allocator.free(clipboard_buffer);
-                            std.debug.print("range length: {}\n", .{state.buffer.getRangeLength()});
                             state.buffer.getRangeText(clipboard_buffer) catch |err| {
                                 std.debug.print("{}", .{err});
                             };
                             clipboard_buffer[clipboard_buffer.len - 1] = 0;
-                            std.debug.print("range text: {s}\n", .{clipboard_buffer[0..]});
+                            sapp.setClipboardString(@as([:0]const u8, @ptrCast(@constCast(clipboard_buffer))));
+                        }
+                    },
+                    .X => {
+                        if (ev.*.modifiers == sapp.modifier_ctrl and !ev.*.key_repeat) {
+                            if (!state.buffer.hasRange()) return;
+                            const clipboard_buffer = allocator.alloc(u8, state.buffer.getRangeLength() + 1) catch unreachable;
+                            defer allocator.free(clipboard_buffer);
+                            state.buffer.getRangeText(clipboard_buffer) catch {};
+                            state.buffer.deleteRange() catch {};
+                            state.buffer.clearRange();
+                            clipboard_buffer[clipboard_buffer.len - 1] = 0;
                             sapp.setClipboardString(@as([:0]const u8, @ptrCast(@constCast(clipboard_buffer))));
                         }
                     },
