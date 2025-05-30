@@ -180,3 +180,24 @@ pub fn rangeLeft(self: *Self) !void {
         self.range_end = self.gap_start;
     }
 }
+
+pub fn charIndexToDataIndex(self: *const Self, char_index: usize) usize {
+    if (char_index < self.gap_start) return char_index;
+    return char_index + (self.gap_end - self.gap_start);
+}
+
+pub fn deleteRange(self: *Self) !void {
+    if (self.range_start == null) return error.NoRange;
+
+    const range_end_idx = self.charIndexToDataIndex(self.range_end);
+
+    self.gap_start = self.range_start.?;
+
+    if (range_end_idx > self.gap_end) {
+        self.gap_end = range_end_idx;
+    }
+}
+
+pub fn hasRange(self: *const Self) bool {
+    return self.range_start != null;
+}

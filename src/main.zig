@@ -212,8 +212,15 @@ export fn event(e: [*c]const sapp.Event) void {
             .KEY_DOWN => {
                 switch (ev.*.key_code) {
                     .BACKSPACE => {
-                        if (state.buffer.getBeforeGap().len > 0) {
-                            state.buffer.deleteChar() catch unreachable;
+                        if (state.buffer.hasRange()) {
+                            state.buffer.deleteRange() catch |err| {
+                                std.debug.print("{}\n", .{err});
+                            };
+                            state.buffer.clearRange();
+                        } else {
+                            if (state.buffer.getBeforeGap().len > 0) {
+                                state.buffer.deleteChar() catch unreachable;
+                            }
                         }
                     },
                     .ENTER => {
@@ -260,7 +267,15 @@ export fn event(e: [*c]const sapp.Event) void {
                 }
             },
             .CHAR => {
-                state.buffer.addChar(@intCast(ev.*.char_code)) catch unreachable;
+                if (state.buffer.hasRange()) {
+                    state.buffer.deleteRange() catch |err| {
+                        std.debug.print("{}\n", .{err});
+                    };
+                    state.buffer.clearRange();
+                }
+                state.buffer.addChar(@intCast(ev.*.char_code)) catch |err| {
+                    std.debug.print("{}\n", .{err});
+                };
             },
             else => {},
         }
