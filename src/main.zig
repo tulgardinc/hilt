@@ -32,8 +32,6 @@ pub const state = struct {
 };
 
 export fn init() void {
-    state.buffer = Buffer.init(4096, allocator) catch unreachable;
-
     stime.setup();
 
     sg.setup(.{
@@ -338,10 +336,22 @@ export fn event(e: [*c]const sapp.Event) void {
 
 export fn cleanup() void {
     state.buffer.deinit();
+    _ = gpa.deinit();
     sg.shutdown();
 }
 
 pub fn main() !void {
+    var args = try std.process.argsWithAllocator(allocator);
+    _ = args.skip();
+
+    if (args.next()) |file_path| {
+        state.buffer = try Buffer.initFromFile(@ptrCast(file_path), allocator);
+    } else {
+        state.buffer = try Buffer.init(Buffer.INITIAL_BUFFER_SIZE, allocator);
+    }
+
+    args.deinit();
+
     sapp.run(.{
         .init_cb = init,
         .frame_cb = frame,

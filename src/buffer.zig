@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const INITIAL_BUFFER = 4096;
+pub const INITIAL_BUFFER_SIZE = 4096;
 
 allocator: std.mem.Allocator,
 
@@ -17,6 +17,20 @@ pub fn init(initial_size: usize, allocator: std.mem.Allocator) !Self {
         .data = try allocator.alloc(u8, initial_size),
         .gap_start = 0,
         .gap_end = initial_size,
+        .allocator = allocator,
+    };
+}
+
+pub fn initFromFile(file_path: []const u8, allocator: std.mem.Allocator) !Self {
+    const cwd = std.fs.cwd();
+    const file_stats = try cwd.statFile(file_path);
+    const content_buffer = try allocator.alloc(u8, @intCast(file_stats.size + 4096));
+    _ = try cwd.readFile(file_path, content_buffer[4096..]);
+
+    return .{
+        .data = content_buffer,
+        .gap_start = 0,
+        .gap_end = 4096,
         .allocator = allocator,
     };
 }
