@@ -145,37 +145,37 @@ fn buildAtlas(self: *Self) !void {
     }
 }
 
-pub fn emitQuad(self: *Self, vertex_index: usize, g: Glyph, x: usize, y: usize) void {
+pub fn emitQuad(self: *Self, vertex_index: usize, g: Glyph, x: f32, y: f32) void {
     // x: left y: bottom
     // y+ = down
 
-    const fx: f32 = @as(f32, @floatFromInt(x)) + g.bearing_x;
-    const fy: f32 = @as(f32, @floatFromInt(y)) - g.bearing_y;
+    const fx: f32 = x + g.bearing_x;
+    const fy: f32 = y - g.bearing_y;
 
     const p1: TextVertex = .{
         .x = fx,
         .y = fy,
         .u = g.u0,
         .v = g.v0,
-    };
+    }; // top left
     const p2: TextVertex = .{
         .x = fx + g.w,
         .y = fy,
         .u = g.u1,
         .v = g.v0,
-    };
+    }; // top right
     const p3: TextVertex = .{
         .x = fx + g.w,
         .y = fy + g.h,
         .u = g.u1,
         .v = g.v1,
-    };
+    }; // bottom right
     const p4: TextVertex = .{
         .x = fx,
         .y = fy + g.h,
         .u = g.u0,
         .v = g.v1,
-    };
+    }; // bottom left
 
     self.vertices[vertex_index] = p1;
     self.vertices[vertex_index + 1] = p2;

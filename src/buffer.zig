@@ -5,16 +5,16 @@ pub const INITIAL_BUFFER = 4096;
 allocator: std.mem.Allocator,
 
 data: []u8,
-data_length: usize,
 gap_start: usize,
 gap_end: usize,
+range_start: ?usize = null,
+range_end: usize = 0,
 
 const Self = @This();
 
 pub fn init(initial_size: usize, allocator: std.mem.Allocator) !Self {
     return .{
         .data = try allocator.alloc(u8, initial_size),
-        .data_length = initial_size,
         .gap_start = 0,
         .gap_end = initial_size,
         .allocator = allocator,
@@ -59,6 +59,10 @@ pub fn moveGap(self: *Self, char_index: usize) !void {
     self.gap_start = char_index;
 }
 
+pub fn getGapLength(self: *const Self) usize {
+    return self.gap_end - self.gap_start;
+}
+
 pub fn getBeforeGap(self: *const Self) []const u8 {
     return self.data[0..self.gap_start];
 }
@@ -68,7 +72,11 @@ pub fn getAfterGap(self: *const Self) []const u8 {
 }
 
 pub fn getTextLength(self: *const Self) usize {
-    return self.gap_start + self.data_length - self.gap_end;
+    return self.data.len - (self.gap_end - self.gap_start);
+}
+
+pub fn clearRange(self: *Self) void {
+    self.range_start = null;
 }
 
 pub fn moveGapUpByLine(self: *Self) !void {
@@ -114,8 +122,6 @@ pub fn moveGapDownByLine(self: *Self) !void {
         }
     }
 
-    std.debug.print("offset: {}\n", .{byte_offset});
-
     var found_first_break = false;
     for (self.gap_end..self.data.len) |fidx| {
         if (found_first_break) {
@@ -139,4 +145,38 @@ pub fn moveGapDownByLine(self: *Self) !void {
         }
     }
     try self.moveGap(self.data.len - (self.gap_end - self.gap_start));
+}
+
+pub fn rangeRight(self: *Self) !void {
+    if (self.gap_end == self.data.len) return error.IndexOutOfRange;
+    if (self.range_start) |*range_start| {
+        if (range_start.* < self.gap_start) {
+            self.range_end += 1;
+        } else {
+            range_start.* += 1;
+            if (self.range_end == range_start.*) {
+                self.range_start = null;
+            }
+        }
+    } else {
+        self.range_start = self.gap_start;
+        self.range_end = self.gap_start + 1;
+    }
+}
+
+pub fn rangeLeft(self: *Self) !void {
+    if (self.gap_start == 0) return error.IndexOutOfRange;
+    if (self.range_start) |*range_start| {
+        if (range_start.* < self.gap_start) {
+            self.range_end -= 1;
+        } else {
+            range_start.* -= 1;
+            if (self.range_end == range_start.*) {
+                self.range_start = null;
+            }
+        }
+    } else {
+        self.range_start = self.gap_start - 1;
+        self.range_end = self.gap_start;
+    }
 }
