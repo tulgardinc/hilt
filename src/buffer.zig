@@ -26,10 +26,17 @@ pub fn deinit(self: *Self) void {
 }
 
 pub fn addChar(self: *Self, char: u8) !void {
-    if (self.gap_end - self.gap_start <= 0) return error.NoGapSpace;
+    if (self.gap_end - self.gap_start == 0) return error.NoGapSpace;
 
     self.data[self.gap_start] = char;
     self.gap_start += 1;
+}
+
+pub fn addString(self: *Self, chars: []const u8) !void {
+    if (self.gap_end - self.gap_start == 0) return error.NoGapSpace;
+
+    std.mem.copyForwards(u8, self.data[self.gap_start .. self.gap_start + chars.len], chars);
+    self.gap_start += chars.len;
 }
 
 pub fn deleteChar(self: *Self) !void {
@@ -246,4 +253,25 @@ pub fn deleteRange(self: *Self) !void {
 
 pub fn hasRange(self: *const Self) bool {
     return self.range_start != null;
+}
+
+pub fn getRangeLength(self: *const Self) usize {
+    if (!self.hasRange()) return 0;
+    return self.range_end - self.range_start.?;
+}
+
+pub fn getRangeText(self: *const Self, str_buffer: []u8) !void {
+    if (!self.hasRange()) return error.NoRange;
+    const range_start = self.range_start.?;
+    var partial_idx: usize = 0;
+
+    if (self.gap_start >= range_start) {
+        const end = if (self.gap_start == range_start) self.range_end else @min(self.range_end, self.gap_start);
+        partial_idx = end - range_start;
+        std.mem.copyForwards(u8, str_buffer[0..partial_idx], self.data[range_start..end]);
+    }
+
+    if (self.gap_end <= self.range_end) {
+        std.mem.copyForwards(u8, str_buffer[partial_idx..], self.data[self.gap_end..self.range_end]);
+    }
 }
