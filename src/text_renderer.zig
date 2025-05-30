@@ -16,7 +16,8 @@ pipeline: sg.Pipeline,
 glyphs: [128]Glyph = undefined,
 font_atlas: [ATLAS_W * ATLAS_H]u8 = .{0} ** (ATLAS_W * ATLAS_H),
 
-vertices: [1024]TextVertex = undefined,
+vertices: []TextVertex,
+allocator: std.mem.Allocator,
 
 const Self = @This();
 
@@ -34,22 +35,32 @@ const Glyph = struct {
     advance: i16,
 };
 
-pub fn init() Self {
-    var text_renderer: Self = .{
+pub fn init(vertex_buffer_size: usize, allocator: std.mem.Allocator) !Self {
+    const text_renderer: Self = .{
         .bindings = sg.Bindings{},
         .pipeline = undefined,
+        .allocator = allocator,
+        .vertices = try allocator.alloc(TextVertex, vertex_buffer_size),
     };
 
-    buildAtlas(&text_renderer) catch |e| {
-        std.debug.print("failed to build atlas: {}", .{e});
+    return text_renderer;
+}
+
+pub fn deinit(self: *Self) void {
+    self.allocator.free(self.vertices);
+}
+
+pub fn initRenderer(self: *Self) void {
+    buildAtlas(self) catch |e| {
+        std.debug.print("failed to build atlas: {}\n", .{e});
     };
 
-    text_renderer.bindings.vertex_buffers[0] = sg.makeBuffer(.{
+    self.bindings.vertex_buffers[0] = sg.makeBuffer(.{
         .usage = .{ .dynamic_update = true },
-        .size = @sizeOf(TextVertex) * 1024,
+        .size = self.vertices.len * @sizeOf(TextVertex),
     });
 
-    text_renderer.bindings.samplers[text_shd.SMP_smp] = sg.makeSampler(.{
+    self.bindings.samplers[text_shd.SMP_smp] = sg.makeSampler(.{
         .mag_filter = .LINEAR,
         .min_filter = .LINEAR,
         .wrap_u = .CLAMP_TO_EDGE,
@@ -61,8 +72,8 @@ pub fn init() Self {
         .height = ATLAS_H,
         .pixel_format = .R8,
     };
-    image_descriptor.data.subimage[0][0] = sg.asRange(&text_renderer.font_atlas);
-    text_renderer.bindings.images[text_shd.IMG_tex] = sg.makeImage(image_descriptor);
+    image_descriptor.data.subimage[0][0] = sg.asRange(&self.font_atlas);
+    self.bindings.images[text_shd.IMG_tex] = sg.makeImage(image_descriptor);
 
     var pip_descriptor: sg.PipelineDesc = .{
         .cull_mode = .BACK,
@@ -89,9 +100,7 @@ pub fn init() Self {
     pip_descriptor.colors[0].blend.src_factor_alpha = .SRC_ALPHA;
     pip_descriptor.colors[0].blend.dst_factor_alpha = .ONE_MINUS_SRC_ALPHA;
 
-    text_renderer.pipeline = sg.makePipeline(pip_descriptor);
-
-    return text_renderer;
+    self.pipeline = sg.makePipeline(pip_descriptor);
 }
 
 fn buildAtlas(self: *Self) !void {

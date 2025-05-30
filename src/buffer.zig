@@ -21,16 +21,15 @@ pub fn init(initial_size: usize, allocator: std.mem.Allocator) !Self {
     };
 }
 
-pub fn initFromFile(file_path: []const u8, allocator: std.mem.Allocator) !Self {
+pub fn initFromFile(file_path: []const u8, file_size: usize, buffer_size: usize, allocator: std.mem.Allocator) !Self {
     const cwd = std.fs.cwd();
-    const file_stats = try cwd.statFile(file_path);
-    const content_buffer = try allocator.alloc(u8, @intCast(file_stats.size + 4096));
-    _ = try cwd.readFile(file_path, content_buffer[4096..]);
+    const content_buffer = try allocator.alloc(u8, buffer_size);
+    _ = try cwd.readFile(file_path, content_buffer[buffer_size - file_size ..]);
 
     return .{
         .data = content_buffer,
         .gap_start = 0,
-        .gap_end = 4096,
+        .gap_end = buffer_size - file_size,
         .allocator = allocator,
     };
 }

@@ -43,9 +43,9 @@ export fn init() void {
 
     state.start_time = stime.ms(stime.now());
 
-    state.text_renderer = TextRenderer.init();
     state.cursor_renderer = CursorRenderer.init();
     state.range_renderer = RangeRenderer.init();
+    state.text_renderer.initRenderer();
 
     state.pass_action.colors[0] = .{
         .load_action = .CLEAR,
@@ -336,6 +336,7 @@ export fn event(e: [*c]const sapp.Event) void {
 
 export fn cleanup() void {
     state.buffer.deinit();
+    state.text_renderer.deinit();
     _ = gpa.deinit();
     sg.shutdown();
 }
@@ -345,9 +346,15 @@ pub fn main() !void {
     _ = args.skip();
 
     if (args.next()) |file_path| {
-        state.buffer = try Buffer.initFromFile(@ptrCast(file_path), allocator);
+        const cwd = std.fs.cwd();
+        const file_stats = try cwd.statFile(file_path);
+        std.debug.print("file size: {}\n", .{file_stats.size});
+        const buffer_size = if (file_stats.size == 0) Buffer.INITIAL_BUFFER_SIZE else try std.math.ceilPowerOfTwo(usize, @intCast(file_stats.size + Buffer.INITIAL_BUFFER_SIZE));
+        state.buffer = try Buffer.initFromFile(@ptrCast(file_path), file_stats.size, buffer_size, allocator);
+        state.text_renderer = try TextRenderer.init(try std.math.ceilPowerOfTwo(usize, buffer_size * 6), allocator);
     } else {
         state.buffer = try Buffer.init(Buffer.INITIAL_BUFFER_SIZE, allocator);
+        state.text_renderer = try TextRenderer.init(try std.math.ceilPowerOfTwo(usize, Buffer.INITIAL_BUFFER_SIZE * 6), allocator);
     }
 
     args.deinit();
