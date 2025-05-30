@@ -79,7 +79,7 @@ pub fn clearRange(self: *Self) void {
     self.range_start = null;
 }
 
-pub fn moveGapUpByLine(self: *Self) !void {
+fn getColumnUpperLine(self: *const Self) usize {
     var byte_offset: ?usize = null;
     var i = self.gap_start;
     var upper_line_length: usize = 0;
@@ -93,8 +93,7 @@ pub fn moveGapUpByLine(self: *Self) !void {
         if (self.data[i] == '\n') {
             if (byte_offset) |off| {
                 // move to either end of line above, or by offset
-                try self.moveGap(i + @min(off, upper_line_length));
-                break;
+                return i + @min(off, upper_line_length);
             } else {
                 // found the first \n
                 byte_offset = self.gap_start - i;
@@ -102,12 +101,14 @@ pub fn moveGapUpByLine(self: *Self) !void {
         } else if (i == 0 and byte_offset != null) {
             // byte offset is off by one if i = 0
             byte_offset.? -= 1;
-            try self.moveGap(i + @min(byte_offset.?, upper_line_length));
+            return i + @min(byte_offset.?, upper_line_length);
         }
     }
+
+    return 0;
 }
 
-pub fn moveGapDownByLine(self: *Self) !void {
+fn getColumnLowerLine(self: *const Self) usize {
     var byte_offset: usize = 0;
     var bidx = self.gap_start;
     var lower_line_length: usize = 0;
@@ -128,8 +129,7 @@ pub fn moveGapDownByLine(self: *Self) !void {
             lower_line_length += 1;
 
             if (lower_line_length - 1 == byte_offset) {
-                try self.moveGap(fidx - (self.gap_end - self.gap_start));
-                return;
+                return fidx - (self.gap_end - self.gap_start);
             }
         }
         if (self.data[fidx] == '\n') {
@@ -139,12 +139,20 @@ pub fn moveGapDownByLine(self: *Self) !void {
             }
 
             if (lower_line_length == byte_offset) {
-                try self.moveGap(fidx - (self.gap_end - self.gap_start));
-                return;
+                return fidx - (self.gap_end - self.gap_start);
             }
         }
     }
-    try self.moveGap(self.data.len - (self.gap_end - self.gap_start));
+
+    return self.data.len - (self.gap_end - self.gap_start);
+}
+
+pub fn moveGapUpByLine(self: *Self) !void {
+    try self.moveGap(self.getColumnUpperLine());
+}
+
+pub fn moveGapDownByLine(self: *Self) !void {
+    try self.moveGap(self.getColumnLowerLine());
 }
 
 pub fn rangeRight(self: *Self) !void {
@@ -179,6 +187,44 @@ pub fn rangeLeft(self: *Self) !void {
         self.range_start = self.gap_start - 1;
         self.range_end = self.gap_start;
     }
+}
+
+pub fn rangeUp(self: *Self) !void {
+    const new_pos = self.getColumnUpperLine();
+    if (self.range_start) |range_start| {
+        if (range_start < self.gap_start) {
+            if (new_pos > range_start) {
+                self.range_end = new_pos;
+            } else {
+                self.range_end = range_start;
+                self.range_start = new_pos;
+            }
+        }
+    } else {
+        self.range_end = self.gap_start;
+    }
+    self.range_start = new_pos;
+
+    if (self.range_start == self.range_end) self.clearRange();
+}
+
+pub fn rangeDown(self: *Self) !void {
+    const new_pos = self.getColumnLowerLine();
+    if (self.range_start) |range_start| {
+        if (range_start > self.gap_start) {
+            if (new_pos > self.range_end) {
+                self.range_start = self.range_end;
+                self.range_end = new_pos;
+            } else {
+                self.range_start = new_pos;
+            }
+        }
+    } else {
+        self.range_start = self.gap_start;
+    }
+    self.range_end = new_pos;
+
+    if (self.range_start == self.range_end) self.clearRange();
 }
 
 pub fn charIndexToDataIndex(self: *const Self, char_index: usize) usize {

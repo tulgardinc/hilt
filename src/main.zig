@@ -224,6 +224,12 @@ export fn event(e: [*c]const sapp.Event) void {
                         }
                     },
                     .ENTER => {
+                        if (state.buffer.hasRange()) {
+                            state.buffer.deleteRange() catch |err| {
+                                std.debug.print("{}\n", .{err});
+                            };
+                            state.buffer.clearRange();
+                        }
                         state.buffer.addChar('\n') catch unreachable;
                     },
                     .LEFT => {
@@ -252,13 +258,25 @@ export fn event(e: [*c]const sapp.Event) void {
                         };
                     },
                     .UP => {
-                        state.buffer.clearRange();
+                        if (ev.*.modifiers == sapp.modifier_shift) {
+                            state.buffer.rangeUp() catch |err| {
+                                std.debug.print("{}\n", .{err});
+                            };
+                        } else {
+                            state.buffer.clearRange();
+                        }
                         state.buffer.moveGapUpByLine() catch |err| {
                             std.debug.print("{}\n", .{err});
                         };
                     },
                     .DOWN => {
-                        state.buffer.clearRange();
+                        if (ev.*.modifiers == sapp.modifier_shift) {
+                            state.buffer.rangeDown() catch |err| {
+                                std.debug.print("{}\n", .{err});
+                            };
+                        } else {
+                            state.buffer.clearRange();
+                        }
                         state.buffer.moveGapDownByLine() catch |err| {
                             std.debug.print("{}\n", .{err});
                         };
