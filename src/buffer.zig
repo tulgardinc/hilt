@@ -81,21 +81,23 @@ pub fn moveGap(self: *Self, char_index: usize) !void {
     if (char_index > self.getTextLength() or char_index < 0) return error.IndexOutOfRange;
 
     if (char_index < self.gap_start) {
-        std.mem.copyForwards(
-            u8,
-            self.data[char_index + (self.gap_end - self.gap_start) .. self.gap_end],
-            self.data[char_index..self.gap_start],
-        );
-    } else {
-        const offsetIndex = char_index + self.gap_end - self.gap_start;
         std.mem.copyBackwards(
             u8,
-            self.data[self.gap_start .. self.gap_start + (self.gap_end - self.gap_start)],
+            self.data[char_index + self.getGapLength() .. self.gap_end],
+            self.data[char_index..self.gap_start],
+        );
+        self.gap_end = char_index + self.getGapLength();
+        self.gap_start = char_index;
+    } else {
+        const offsetIndex = char_index + self.getGapLength();
+        std.mem.copyForwards(
+            u8,
+            self.data[self.gap_start .. self.gap_start + offsetIndex - self.gap_end],
             self.data[self.gap_end..offsetIndex],
         );
+        self.gap_end = char_index + self.getGapLength();
+        self.gap_start = char_index;
     }
-    self.gap_end = char_index + self.gap_end - self.gap_start;
-    self.gap_start = char_index;
 }
 
 pub fn getGapLength(self: *const Self) usize {
