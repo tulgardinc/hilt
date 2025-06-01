@@ -82,13 +82,20 @@ pub fn addCommand(self: *Self, bind: []const u8, mode: Mode, action: *const fn (
         if (char == '<') {
             var end_index: usize = 0;
             for (char_index + 1..bind.len) |i| {
-                if (bind[i] == '>') end_index = i;
+                if (bind[i] == '>') {
+                    end_index = i;
+                    break;
+                }
             }
             if (end_index == 0) return error.MalformedBind;
 
             const code_with_mod = try parseKey(bind[char_index + 1 .. end_index]);
 
-            std.debug.print("registered: {b}\n", .{code_with_mod});
+            std.debug.print("string: {s}\n", .{bind});
+            std.debug.print("char index: {}\n", .{char_index});
+            std.debug.print("end index: {}\n", .{end_index});
+            std.debug.print("char: {c}\n", .{@as(u8, @intCast(code_with_mod >> 4))});
+            std.debug.print("registered: {b}\n\n", .{code_with_mod});
 
             if (current_maps_ptr.key_map == null) {
                 current_maps_ptr.key_map = ActionMap.init(self.allocator);
@@ -108,7 +115,7 @@ pub fn addCommand(self: *Self, bind: []const u8, mode: Mode, action: *const fn (
 
             char_index = end_index + 1;
 
-            return;
+            continue;
         }
 
         if (current_maps_ptr.char_map == null) {
