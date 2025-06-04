@@ -95,33 +95,38 @@ pub fn moveGap(self: *Self, buffer_index: usize) !void {
     if (buffer_index > self.data.len or buffer_index < 0) return error.IndexOutOfRange;
 
     if (buffer_index < self.gap_start) {
+        self.current_line -= self.getLineDelta(buffer_index, self.gap_start);
         std.mem.copyBackwards(
             u8,
             self.data[buffer_index + self.getGapLength() .. self.gap_end],
             self.data[buffer_index..self.gap_start],
         );
-        self.current_line += self.getLineDelta(buffer_index, self.gap_start);
         self.gap_end -= self.gap_start - buffer_index;
         self.gap_start = buffer_index;
     } else {
+        self.current_line += self.getLineDelta(self.gap_end, buffer_index);
         std.mem.copyForwards(
             u8,
             self.data[self.gap_start .. buffer_index - self.getGapLength()],
             self.data[self.gap_end..buffer_index],
         );
-        self.current_line += self.getLineDelta(self.gap_end, buffer_index);
         self.gap_start += buffer_index - self.gap_end;
         self.gap_end = buffer_index;
     }
 }
 
 pub fn getLineDelta(self: *const Self, start_index: usize, end_index: usize) usize {
-    std.debug.assert(start_index < end_index);
+    std.debug.assert(start_index <= end_index);
     var line_count: usize = 0;
-
-    for (self.data[start_index..end_index]) |c| {
-        if (c == '\n') {
+    var index: usize = start_index;
+    while (index < end_index) {
+        if (self.data[index] == '\n') {
             line_count += 1;
+        }
+        if (index == self.gap_start) {
+            index = self.gap_end;
+        } else {
+            index += 1;
         }
     }
 

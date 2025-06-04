@@ -27,25 +27,27 @@ const allocator = gpa.allocator();
 pub const Mode = enum { normal, insert, visual };
 
 pub const State = struct {
-    var pass_action: sg.PassAction = .{};
-    var text_renderer: TextRenderer = undefined;
-    var cursor_renderer: CursorRenderer = undefined;
-    var range_renderer: RangeRenderer = undefined;
+    pub var pass_action: sg.PassAction = .{};
+    pub var text_renderer: TextRenderer = undefined;
+    pub var cursor_renderer: CursorRenderer = undefined;
+    pub var range_renderer: RangeRenderer = undefined;
     pub var buffer: Buffer = undefined;
-    var mode: Mode = .normal;
+    pub var mode: Mode = .normal;
 
-    var command_handler: CommandHandler = undefined;
+    pub var command_handler: CommandHandler = undefined;
 
-    var cursor_nwidth: f32 = 0.0;
-    var cursor_nchar_x_offset: f32 = 0.0;
+    pub var cursor_nwidth: f32 = 0.0;
+    pub var cursor_nchar_x_offset: f32 = 0.0;
 
-    var start_time: f64 = 0;
-    var viewport = struct {
+    pub var start_time: f64 = 0;
+    pub var viewport = struct {
         top: f32 = 0,
         bottom: f32 = 0,
         left: f32 = 0,
         right: f32 = 0,
     }{};
+
+    pub const row_height: f32 = 30.0;
 };
 
 export fn init() void {
@@ -86,9 +88,11 @@ export fn init() void {
 }
 
 const DrawingState = struct {
-    pen_x: f32 = 20.0,
+    pen_x: f32 = 80.0,
     pen_y: f32 = 100.0,
-    row_height: f32 = 30.0,
+
+    line_number_buffer: [16]u8 = undefined,
+    current_line: usize = 0,
 
     cursor_x: f32 = 0.0,
     cursor_y: f32 = 100.0,
@@ -103,21 +107,21 @@ fn drawChar(ds: *DrawingState, char: u8) void {
     if (State.buffer.range_start) |range_start| {
         if (ds.char_index == range_start) {
             ds.drawing_range = true;
-            State.range_renderer.emitLeftEdge(ds.pen_x, ds.pen_y, ds.pen_y - ds.row_height);
+            State.range_renderer.emitLeftEdge(ds.pen_x, ds.pen_y, ds.pen_y - State.row_height);
         }
     }
 
     if (ds.drawing_range) {
         if (ds.char_index == State.buffer.range_end) {
             ds.drawing_range = false;
-            State.range_renderer.emitRightEdge(ds.pen_x, ds.pen_y, ds.pen_y - ds.row_height);
+            State.range_renderer.emitRightEdge(ds.pen_x, ds.pen_y, ds.pen_y - State.row_height);
         }
     }
 
     if (char != '\n') {
         const glyph = State.text_renderer.glyphs[char];
         State.text_renderer.emitInstanceData(
-            State.text_renderer.glyphs[char],
+            glyph,
             ds.pen_x,
             ds.pen_y,
             if (ds.char_index == State.buffer.gap_start) zalg.Vec4.new(0.0, 0.0, 0.0, 1.0) else zalg.Vec4.one(),
@@ -126,12 +130,29 @@ fn drawChar(ds: *DrawingState, char: u8) void {
         ds.vertex_index += 6;
     } else {
         if (ds.drawing_range) {
-            State.range_renderer.emitRightEdge(ds.pen_x, ds.pen_y, ds.pen_y - ds.row_height);
+            State.range_renderer.emitRightEdge(ds.pen_x, ds.pen_y, ds.pen_y - State.row_height);
         }
-        ds.pen_x = 20;
-        ds.pen_y += ds.row_height;
+
+        const line_number_slice = std.fmt.bufPrintIntToSlice(&ds.line_number_buffer, ds.current_line, 10, .lower, .{});
+        var ln_index = line_number_slice.len;
+        var ln_pen_x: f32 = 50.0;
+        while (ln_index > 0) {
+            ln_index -= 1;
+            const glyph = State.text_renderer.glyphs[line_number_slice[ln_index]];
+            State.text_renderer.emitInstanceData(
+                glyph,
+                ln_pen_x,
+                ds.pen_y,
+                if (ds.current_line == State.buffer.current_line) zalg.Vec4.new(1.0, 0.0, 0.0, 1.0) else zalg.Vec4.one(),
+            );
+            ln_pen_x -= @floatFromInt(glyph.advance);
+        }
+        ds.current_line += 1;
+
+        ds.pen_x = 80;
+        ds.pen_y += State.row_height;
         if (ds.drawing_range) {
-            State.range_renderer.emitLeftEdge(ds.pen_x, ds.pen_y, ds.pen_y - ds.row_height);
+            State.range_renderer.emitLeftEdge(ds.pen_x, ds.pen_y, ds.pen_y - State.row_height);
         }
     }
 
@@ -143,8 +164,6 @@ export fn frame() void {
 
     State.range_renderer.setupDraw();
     State.text_renderer.setupDraw();
-
-    //std.debug.print("{s}\n", .{State.buffer.getBeforeGap()});
 
     for (State.buffer.getBeforeGap()) |char| {
         drawChar(&drawing_state, char);
@@ -161,15 +180,15 @@ export fn frame() void {
         State.range_renderer.emitRightEdge(
             drawing_state.pen_x,
             drawing_state.pen_y,
-            drawing_state.pen_y - drawing_state.row_height,
+            drawing_state.pen_y - State.row_height,
         );
     }
 
     if (drawing_state.cursor_y + 10.0 > State.viewport.bottom) {
         State.viewport.bottom = drawing_state.cursor_y;
         State.viewport.top = State.viewport.bottom - sapp.heightf();
-    } else if (drawing_state.cursor_y < State.viewport.top + drawing_state.row_height) {
-        State.viewport.top = drawing_state.cursor_y - drawing_state.row_height;
+    } else if (drawing_state.cursor_y < State.viewport.top + State.row_height) {
+        State.viewport.top = drawing_state.cursor_y - State.row_height;
         State.viewport.bottom = State.viewport.top + sapp.heightf();
     } else {
         State.viewport.bottom = State.viewport.top + sapp.heightf();

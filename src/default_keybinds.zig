@@ -12,6 +12,9 @@ pub fn setDefaultBinds(command_handler: *CommandHandler) !void {
     try command_handler.addCommand("w", .normal, Commands.moveWordStartRight);
     try command_handler.addCommand("e", .normal, Commands.moveWordEndRight);
     try command_handler.addCommand("b", .normal, Commands.moveWordStartLeft);
+    try command_handler.addCommand("<C-u>", .normal, Commands.upByHalf);
+    try command_handler.addCommand("<C-d>", .normal, Commands.downByHalf);
+    try command_handler.addCommand("zz", .normal, Commands.centerLine);
 }
 
 // if (e) |ev| {

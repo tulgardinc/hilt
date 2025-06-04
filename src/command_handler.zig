@@ -91,12 +91,6 @@ pub fn addCommand(self: *Self, bind: []const u8, mode: Mode, action: *const fn (
 
             const code_with_mod = try parseKey(bind[char_index + 1 .. end_index]);
 
-            std.debug.print("string: {s}\n", .{bind});
-            std.debug.print("char index: {}\n", .{char_index});
-            std.debug.print("end index: {}\n", .{end_index});
-            std.debug.print("char: {c}\n", .{@as(u8, @intCast(code_with_mod >> 4))});
-            std.debug.print("registered: {b}\n\n", .{code_with_mod});
-
             if (current_maps_ptr.key_map == null) {
                 current_maps_ptr.key_map = ActionMap.init(self.allocator);
             }
@@ -209,12 +203,6 @@ pub fn onInput(self: *Self, mode: Mode, event: [*c]const sapp.Event) void {
                 const shifted_code: u32 = @bitCast(@intFromEnum(e.*.key_code) << 4);
                 const code_with_mod = shifted_code | e.*.modifiers;
 
-                if (e.*.char_code != 0) {
-                    std.debug.print("raw {b}\n", .{@intFromEnum(e.*.key_code)});
-                    std.debug.print("code {b}\n", .{shifted_code});
-                    std.debug.print("code + mod: {b}\n", .{code_with_mod});
-                }
-
                 if (current_maps_ptr.key_map == null) return;
                 const key_map_ptr = &current_maps_ptr.key_map.?;
                 const map_or_action_ptr = key_map_ptr.getPtr(code_with_mod) orelse {
@@ -306,7 +294,6 @@ const parseKey = blk: {
                 }
             }
 
-            std.debug.print("{s}\n", .{string[input_start .. i - 1]});
             code_with_mod.code_point = @intCast(static_map.get(string[input_start..i]) orelse return error.InvalidKey);
 
             return @bitCast(code_with_mod);
