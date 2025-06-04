@@ -5,6 +5,7 @@ pub const INITIAL_BUFFER_SIZE = 4096;
 allocator: std.mem.Allocator,
 
 data: []u8,
+current_line: usize,
 gap_start: usize,
 gap_end: usize,
 range_start: ?usize = null,
@@ -19,6 +20,7 @@ pub fn init(initial_size: usize, allocator: std.mem.Allocator) !Self {
         .gap_start = 0,
         .gap_end = initial_size,
         .allocator = allocator,
+        .current_line = 0,
     };
 }
 
@@ -32,11 +34,22 @@ pub fn initFromFile(file_path: []const u8, file_size: usize, buffer_size: usize,
         .gap_start = 0,
         .gap_end = buffer_size - file_size,
         .allocator = allocator,
+        .current_line = 0,
     };
 }
 
 pub fn deinit(self: *Self) void {
     self.allocator.free(self.data);
+}
+
+pub fn toBufferIndex(self: *const Self, char_index: usize) usize {
+    if (char_index < self.gap_start) return char_index;
+    return char_index + self.getGapLength();
+}
+
+pub fn toCharIndex(self: *const Self, buffer_index: usize) usize {
+    if (buffer_index < self.gap_start) return buffer_index;
+    return buffer_index - self.getGapLength();
 }
 
 pub fn addChar(self: *Self, char: u8) !void {
@@ -53,19 +66,19 @@ pub fn addString(self: *Self, chars: []const u8) !void {
     self.gap_start += chars.len;
 }
 
-pub fn deleteCharLeft(self: *Self) !void {
-    if (self.gap_start <= 0) return error.NoCharacterToRemove;
+pub fn deleteCharsLeft(self: *Self, amount: usize) !void {
+    if (self.gap_start - amount <= 0) return error.NoCharacterToRemove;
 
-    self.gap_start -= 1;
+    self.gap_start -= amount;
 }
 
-pub fn deleteCharRight(self: *Self) !void {
-    if (self.gap_end == self.data.len) return error.NoCharacterToRemove;
+pub fn deleteCharsRight(self: *Self, amount: usize) !void {
+    if (self.gap_end + amount == self.data.len) return error.NoCharacterToRemove;
 
-    self.gap_end += 1;
+    self.gap_end += amount;
 }
 
-pub fn getLeftOffset(self: *const Self) usize {
+pub fn getLineOffset(self: *const Self) usize {
     var i: usize = self.gap_start;
     while (i > 0) {
         i -= 1;
@@ -77,27 +90,42 @@ pub fn getLeftOffset(self: *const Self) usize {
     return self.gap_start - i;
 }
 
-pub fn moveGap(self: *Self, char_index: usize) !void {
-    if (char_index > self.getTextLength() or char_index < 0) return error.IndexOutOfRange;
+pub fn moveGap(self: *Self, buffer_index: usize) !void {
+    if (buffer_index == self.gap_start) return;
+    if (buffer_index > self.data.len or buffer_index < 0) return error.IndexOutOfRange;
 
-    if (char_index < self.gap_start) {
+    if (buffer_index < self.gap_start) {
         std.mem.copyBackwards(
             u8,
-            self.data[char_index + self.getGapLength() .. self.gap_end],
-            self.data[char_index..self.gap_start],
+            self.data[buffer_index + self.getGapLength() .. self.gap_end],
+            self.data[buffer_index..self.gap_start],
         );
-        self.gap_end = char_index + self.getGapLength();
-        self.gap_start = char_index;
+        self.current_line += self.getLineDelta(buffer_index, self.gap_start);
+        self.gap_end -= self.gap_start - buffer_index;
+        self.gap_start = buffer_index;
     } else {
-        const offsetIndex = char_index + self.getGapLength();
         std.mem.copyForwards(
             u8,
-            self.data[self.gap_start .. self.gap_start + offsetIndex - self.gap_end],
-            self.data[self.gap_end..offsetIndex],
+            self.data[self.gap_start .. buffer_index - self.getGapLength()],
+            self.data[self.gap_end..buffer_index],
         );
-        self.gap_end = char_index + self.getGapLength();
-        self.gap_start = char_index;
+        self.current_line += self.getLineDelta(self.gap_end, buffer_index);
+        self.gap_start += buffer_index - self.gap_end;
+        self.gap_end = buffer_index;
     }
+}
+
+pub fn getLineDelta(self: *const Self, start_index: usize, end_index: usize) usize {
+    std.debug.assert(start_index < end_index);
+    var line_count: usize = 0;
+
+    for (self.data[start_index..end_index]) |c| {
+        if (c == '\n') {
+            line_count += 1;
+        }
+    }
+
+    return line_count;
 }
 
 pub fn getGapLength(self: *const Self) usize {
@@ -113,72 +141,67 @@ pub fn getAfterGap(self: *const Self) []const u8 {
 }
 
 pub fn getTextLength(self: *const Self) usize {
-    return self.data.len - (self.gap_end - self.gap_start);
+    return self.data.len - self.getGapLength();
 }
 
 pub fn clearRange(self: *Self) void {
     self.range_start = null;
 }
 
-fn getColumnUpperLine(self: *const Self) usize {
-    var in_upper_line = false;
-    var i = self.gap_start;
-    var upper_line_length: usize = 0;
-    // move back from cursor
-    while (i > 0) {
-        i -= 1;
-        if (in_upper_line) {
-            // byte_offset != null = found the first \n
-            upper_line_length += 1;
-        }
-        if (self.data[i] == '\n') {
-            if (in_upper_line) {
-                // move to either end of line above, or by offset
-                return i + @min(self.desired_offset + 1, upper_line_length);
-            } else {
-                // found the first \n
-                in_upper_line = true;
+/// Returns buffer index of the begining of a line
+/// Starts search from current line
+pub fn getLine(self: *const Self, target_line_number: usize) usize {
+    if (target_line_number < self.current_line) {
+        var i = self.gap_start;
+        var current_line = self.current_line;
+        while (i > 0) {
+            i -= 1;
+            if (self.data[i] == '\n') {
+                if (current_line == target_line_number) {
+                    return i + 1;
+                } else {
+                    current_line -= 1;
+                }
             }
-        } else if (i == 0 and in_upper_line) {
-            return i + @min(self.desired_offset + 1, upper_line_length);
         }
+        return i;
+    } else {
+        var i = self.gap_end;
+        var current_line = self.current_line;
+        while (current_line != target_line_number and i < self.data.len) : (i += 1) {
+            if (self.data[i] == '\n') {
+                current_line += 1;
+            }
+        }
+        return i;
     }
-
-    return 0;
 }
 
-fn getColumnLowerLine(self: *const Self) usize {
-    var lower_line_length: usize = 0;
-
-    var found_first_break = false;
-    for (self.gap_end..self.data.len) |fidx| {
-        if (found_first_break) {
-            if (lower_line_length == self.desired_offset) {
-                return fidx - (self.gap_end - self.gap_start);
-            }
-
-            lower_line_length += 1;
-        }
-        if (self.data[fidx] == '\n') {
-            if (!found_first_break) {
-                found_first_break = true;
-                continue;
-            }
-
-            return fidx - (self.gap_end - self.gap_start);
+pub fn getDesiredOffsetOnLine(self: *const Self, line_start_index: usize) usize {
+    var i: usize = line_start_index;
+    while (i < line_start_index + self.desired_offset and i < self.data.len) : (i += 1) {
+        if (self.data[i] == '\n') {
+            return i;
         }
     }
-
-    return self.data.len - (self.gap_end - self.gap_start);
+    return i;
 }
 
 pub fn moveGapUpByLine(self: *Self) !void {
-    try self.moveGap(self.getColumnUpperLine());
+    if (self.current_line == 0) return;
+    const line_start = self.getLine(self.current_line - 1);
+    const desired = self.getDesiredOffsetOnLine(line_start);
+    try self.moveGap(desired);
 }
 
 pub fn moveGapDownByLine(self: *Self) !void {
-    try self.moveGap(self.getColumnLowerLine());
+    if (self.gap_end == self.data.len) return;
+    const line_start = self.getLine(self.current_line + 1);
+    const desired = self.getDesiredOffsetOnLine(line_start);
+    try self.moveGap(desired);
 }
+
+// === RANGE ===
 
 pub fn rangeRight(self: *Self) !void {
     if (self.gap_end == self.data.len) return error.IndexOutOfRange;
@@ -252,15 +275,10 @@ pub fn rangeDown(self: *Self) !void {
     if (self.range_start == self.range_end) self.clearRange();
 }
 
-pub fn charIndexToDataIndex(self: *const Self, char_index: usize) usize {
-    if (char_index < self.gap_start) return char_index;
-    return char_index + (self.gap_end - self.gap_start);
-}
-
 pub fn deleteRange(self: *Self) !void {
     if (self.range_start == null) return error.NoRange;
 
-    const range_end_idx = self.charIndexToDataIndex(self.range_end);
+    const range_end_idx = self.toBufferIndex(self.range_end);
 
     self.gap_start = self.range_start.?;
 

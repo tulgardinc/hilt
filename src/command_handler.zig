@@ -217,7 +217,10 @@ pub fn onInput(self: *Self, mode: Mode, event: [*c]const sapp.Event) void {
 
                 if (current_maps_ptr.key_map == null) return;
                 const key_map_ptr = &current_maps_ptr.key_map.?;
-                const map_or_action_ptr = key_map_ptr.getPtr(code_with_mod) orelse return;
+                const map_or_action_ptr = key_map_ptr.getPtr(code_with_mod) orelse {
+                    self.current_maps_ptr = null;
+                    return;
+                };
                 switch (map_or_action_ptr.*) {
                     .maps => |*maps_ptr| {
                         self.current_maps_ptr = maps_ptr;
@@ -235,7 +238,10 @@ pub fn onInput(self: *Self, mode: Mode, event: [*c]const sapp.Event) void {
 
                 if (current_maps_ptr.char_map == null) return;
                 const char_map_ptr = &current_maps_ptr.char_map.?;
-                const map_or_action_ptr = char_map_ptr.getPtr(code_with_mod) orelse return;
+                const map_or_action_ptr = char_map_ptr.getPtr(code_with_mod) orelse {
+                    self.current_maps_ptr = null;
+                    return;
+                };
                 switch (map_or_action_ptr.*) {
                     .maps => |*maps_ptr| {
                         self.current_maps_ptr = maps_ptr;

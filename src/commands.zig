@@ -6,14 +6,14 @@ pub fn moveLeft() void {
     State.buffer.moveGap(State.buffer.gap_start - 1) catch |err| {
         std.debug.print("{}\n", .{err});
     };
-    State.buffer.desired_offset = State.buffer.getLeftOffset();
+    State.buffer.desired_offset = State.buffer.getLineOffset();
 }
 
 pub fn moveRight() void {
-    State.buffer.moveGap(State.buffer.gap_start + 1) catch |err| {
+    State.buffer.moveGap(State.buffer.gap_end + 1) catch |err| {
         std.debug.print("{}\n", .{err});
     };
-    State.buffer.desired_offset = State.buffer.getLeftOffset();
+    State.buffer.desired_offset = State.buffer.getLineOffset();
 }
 
 pub fn moveUp() void {
@@ -29,7 +29,7 @@ pub fn moveDown() void {
 }
 
 pub fn deleteAtPoint() void {
-    State.buffer.deleteCharRight() catch |err| {
+    State.buffer.deleteCharsRight(1) catch |err| {
         std.debug.print("{}\n", .{err});
     };
 }
@@ -41,7 +41,7 @@ pub fn moveTop() void {
 }
 
 pub fn moveBottom() void {
-    State.buffer.moveGap(State.buffer.getTextLength() - 1) catch |err| {
+    State.buffer.moveGap(State.buffer.data.len - 1) catch |err| {
         std.debug.print("{}\n", .{err});
     };
 }
@@ -52,7 +52,7 @@ pub fn moveWordStartRight() void {
         if (State.buffer.data[i] == ' ' or State.buffer.data[i] == '\n') {
             found_first_gap = true;
         } else if (found_first_gap) {
-            State.buffer.moveGap(i - State.buffer.getGapLength()) catch |err| {
+            State.buffer.moveGap(i) catch |err| {
                 std.debug.print("{}\n", .{err});
             };
             return;
@@ -96,7 +96,7 @@ pub fn moveWordEndRight() void {
     for (State.buffer.gap_end..State.buffer.data.len - 1) |i| {
         if (State.buffer.data[i + 1] == ' ' or State.buffer.data[i + 1] == '\n') {
             if (found_first_word) {
-                State.buffer.moveGap(i - State.buffer.getGapLength()) catch |err| {
+                State.buffer.moveGap(i) catch |err| {
                     std.debug.print("{}\n", .{err});
                 };
                 return;

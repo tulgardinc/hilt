@@ -144,6 +144,8 @@ export fn frame() void {
     State.range_renderer.setupDraw();
     State.text_renderer.setupDraw();
 
+    //std.debug.print("{s}\n", .{State.buffer.getBeforeGap()});
+
     for (State.buffer.getBeforeGap()) |char| {
         drawChar(&drawing_state, char);
     }
