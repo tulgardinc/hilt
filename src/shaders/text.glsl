@@ -51,8 +51,8 @@ void main() {
     float val = texture(sampler2D(tex, smp), vert_uv).r;
 
     bool cursor_overlap = 
-        frag_pos.x >= cursor_position.x - cursor_dimensions.x / 2.0 && frag_pos.x <= cursor_position.x + cursor_dimensions.x / 2.0 &&
-        frag_pos.y >= cursor_position.y - cursor_dimensions.y / 2.0 && frag_pos.y <= cursor_position.y + cursor_dimensions.y / 2.0;
+        frag_pos.x >= cursor_position.x && frag_pos.x <= cursor_position.x + cursor_dimensions.x &&
+        frag_pos.y <= cursor_position.y && frag_pos.y >= cursor_position.y - cursor_dimensions.y;
 
     frag_color = cursor_overlap ? vec4(0.0, 0.0, 0.0, val) : vec4(col.xyz, val);
 }

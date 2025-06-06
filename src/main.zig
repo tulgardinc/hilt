@@ -41,12 +41,15 @@ pub const State = struct {
     pub var cursor: Cursor = Cursor.init();
 
     pub var cursor_nwidth: f32 = 0.0;
+    pub var cursor_height: f32 = 0.0;
     pub var cursor_nchar_x_offset: f32 = 0.0;
 
     pub var start_time: f64 = 0;
     pub var viewport: Viewport = undefined;
 
-    pub const row_height: f32 = 30.0;
+    pub var row_height: f32 = 0.0;
+    pub var font_descender: f32 = 0.0;
+
     pub var delta_time: f32 = 0.0;
 };
 
@@ -211,22 +214,29 @@ export fn frame() void {
     const cursor_width: f32 = if (State.mode == .normal or State.mode == .visual) State.cursor_nwidth else 2.0;
     const cursor_x_offset: f32 = if (State.mode == .normal or State.mode == .visual) State.cursor_nchar_x_offset else 0.0;
 
-    State.cursor.target_position = zalg.Vec2.new(drawing_state.cursor_x + cursor_x_offset + (cursor_width / 2.0), drawing_state.cursor_y - 10.0);
+    State.cursor.target_position = zalg.Vec2.new(drawing_state.cursor_x + cursor_x_offset, drawing_state.cursor_y + @abs(State.font_descender));
     State.cursor.update();
 
-    const cursor_scale = zalg.Mat4.scale(
-        zalg.Mat4.identity(),
-        zalg.Vec3.new(cursor_width, 28.0, 0.0),
-    );
+    const cursor_center = zalg.Mat4.identity().translate(zalg.Vec3.new(-0.5, 0.5, 0));
+    const cursor_rad: f32 = @floatCast(std.math.atan2(State.cursor.vel.x(), State.cursor.vel.y()));
+    const cursor_angle: f32 = std.math.radiansToDegrees(cursor_rad);
+    const cursor_rotate = zalg.Mat4.fromRotation(cursor_angle, zalg.Vec3.forward());
+    const cursor_stretch: f32 = 1.0 + State.cursor.vel.length() * 0.00025;
+    const cursor_scale_vel = zalg.Mat4.fromScale(zalg.Vec3.new(1.0 / cursor_stretch, cursor_stretch, 0));
+    const cursor_unrotate = zalg.Mat4.fromRotation(-cursor_angle, zalg.Vec3.forward());
+    const cursor_uncenter = zalg.Mat4.fromTranslate(zalg.Vec3.new(0.5, -0.5, 0));
+    const cursor_scale = zalg.Mat4.fromScale(zalg.Vec3.new(cursor_width, State.cursor_height, 0.0));
+    const cursor_translation = zalg.Mat4.fromTranslate(State.cursor.position.toVec3(0.0));
 
-    const cursor_translation = zalg.Mat4.translate(
-        zalg.Mat4.identity(),
-        State.cursor.position.toVec3(0.0),
-    );
     const cursor_vs_params: cursor_shd.VsParams = .{
-        .mvp = ortho.mul(cursor_translation.mul(cursor_scale)),
+        .mvp = ortho.mul(cursor_translation)
+            .mul(cursor_scale)
+            .mul(cursor_uncenter)
+            .mul(cursor_unrotate)
+            .mul(cursor_scale_vel)
+            .mul(cursor_rotate)
+            .mul(cursor_center),
     };
-
     const cursor_fs_params: cursor_shd.FsParams = .{
         .time = if (State.mode == .insert) @floatCast(stime.ms(stime.now()) - State.start_time) else 0,
     };
@@ -237,7 +247,7 @@ export fn frame() void {
 
     const text_fs_params: text_shd.FsParams = .{
         .cursor_position = State.cursor.position.toArray(),
-        .cursor_dimensions = zalg.Vec2.new(cursor_width, 28.0).toArray(),
+        .cursor_dimensions = zalg.Vec2.new(cursor_width, State.cursor_height).toArray(),
     };
 
     if (State.buffer.getTextLength() > 0) {

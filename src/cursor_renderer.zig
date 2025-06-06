@@ -15,12 +15,12 @@ pub fn init() Self {
     cursor_renderer.bindings.vertex_buffers[0] = sg.makeBuffer(.{
         .data = sg.asRange(
             &[_]f32{
-                -0.5, 0.5,
-                0.5,  0.5,
-                -0.5, -0.5,
-                0.5,  0.5,
-                0.5,  -0.5,
-                -0.5, -0.5,
+                0.0, -1.0,
+                1.0, -1.0,
+                0.0, 0.0,
+                1.0, -1.0,
+                1.0, 0.0,
+                0.0, 0.0,
             },
         ),
     });
