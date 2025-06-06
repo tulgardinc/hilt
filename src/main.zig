@@ -124,7 +124,7 @@ fn drawChar(ds: *DrawingState, char: u8) void {
             glyph,
             ds.pen_x,
             ds.pen_y,
-            if (ds.char_index == State.buffer.gap_start) zalg.Vec4.new(0.0, 0.0, 0.0, 1.0) else zalg.Vec4.one(),
+            zalg.Vec4.one(),
         );
         ds.pen_x += @floatFromInt(glyph.advance);
         ds.vertex_index += 6;
@@ -219,12 +219,12 @@ export fn frame() void {
         zalg.Vec3.new(cursor_width, 28.0, 0.0),
     );
 
-    const cursor_position = zalg.Mat4.translate(
+    const cursor_translation = zalg.Mat4.translate(
         zalg.Mat4.identity(),
         State.cursor.position.toVec3(0.0),
     );
     const cursor_vs_params: cursor_shd.VsParams = .{
-        .mvp = ortho.mul(cursor_position.mul(cursor_scale)),
+        .mvp = ortho.mul(cursor_translation.mul(cursor_scale)),
     };
 
     const cursor_fs_params: cursor_shd.FsParams = .{
@@ -233,6 +233,11 @@ export fn frame() void {
 
     const text_vs_params: text_shd.VsParams = .{
         .mvp = ortho,
+    };
+
+    const text_fs_params: text_shd.FsParams = .{
+        .cursor_position = State.cursor.position.toArray(),
+        .cursor_dimensions = zalg.Vec2.new(cursor_width, 28.0).toArray(),
     };
 
     if (State.buffer.getTextLength() > 0) {
@@ -261,6 +266,7 @@ export fn frame() void {
     sg.applyPipeline(State.text_renderer.pipeline);
     sg.applyBindings(State.text_renderer.bindings);
     sg.applyUniforms(text_shd.UB_vs_params, sg.asRange(&text_vs_params));
+    sg.applyUniforms(text_shd.UB_fs_params, sg.asRange(&text_fs_params));
     sg.draw(0, 6, @intCast(State.text_renderer.instance_count));
     sg.endPass();
     sg.commit();
