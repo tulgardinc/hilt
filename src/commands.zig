@@ -1,5 +1,6 @@
 const std = @import("std");
 const State = @import("main.zig").State;
+const zalg = @import("zalgebra");
 
 pub fn moveLeft() void {
     if (State.buffer.gap_start == 0) return;
@@ -47,40 +48,46 @@ pub fn moveBottom() void {
 }
 
 pub fn upByHalf() void {
-    const half_height: f32 = (State.viewport.bottom - State.viewport.top) / 2.0;
+    const half_height: f32 = State.viewport.height / 2.0;
+    const viewport_desired_position: zalg.Vec2 = State.viewport.getDesiredPosition();
+    const relative_dist: f32 = @as(f32, @floatFromInt(State.buffer.current_line)) * State.row_height - viewport_desired_position.y();
     const row_count: usize = @as(usize, @intFromFloat(half_height)) / @as(usize, @intFromFloat(State.row_height));
-    const y_delta: f32 = @as(f32, @floatFromInt(row_count)) * State.row_height;
     if (State.buffer.current_line < row_count) {
         State.buffer.moveGap(0) catch undefined;
         State.buffer.desired_offset = State.buffer.getLineOffset();
         return;
     }
-    const line_start = State.buffer.getLine(State.buffer.current_line - row_count);
+    const target_line_number = State.buffer.current_line - row_count;
+    const line_start = State.buffer.getLine(target_line_number);
     const desired = State.buffer.getDesiredOffsetOnLine(line_start);
     State.buffer.moveGap(desired) catch undefined;
-    State.viewport.top -= y_delta;
-    State.viewport.bottom -= y_delta;
+    var pos: zalg.Vec2 = State.viewport.position;
+    pos.yMut().* = @as(f32, @floatFromInt(target_line_number)) * State.row_height - relative_dist;
+    State.viewport.setPosition(pos);
 }
 
 pub fn downByHalf() void {
-    const half_height: f32 = (State.viewport.bottom - State.viewport.top) / 2.0;
+    const half_height: f32 = State.viewport.height / 2.0;
+    const viewport_desired_position: zalg.Vec2 = State.viewport.getDesiredPosition();
+    const relative_dist: f32 = @as(f32, @floatFromInt(State.buffer.current_line)) * State.row_height - viewport_desired_position.y();
     const row_count: usize = @as(usize, @intFromFloat(half_height)) / @as(usize, @intFromFloat(State.row_height));
-    const y_delta: f32 = @as(f32, @floatFromInt(row_count)) * State.row_height;
-    const line_start = State.buffer.getLine(State.buffer.current_line + row_count);
+    const target_line_number = State.buffer.current_line + row_count;
+    const line_start = State.buffer.getLine(target_line_number);
     const desired = State.buffer.getDesiredOffsetOnLine(line_start);
     // TODO: inefficient
     if (State.buffer.getLine(desired) != line_start) {
         State.buffer.moveGap(desired) catch undefined;
-        State.viewport.top += y_delta;
-        State.viewport.bottom += y_delta;
+        var pos: zalg.Vec2 = State.viewport.position;
+        pos.yMut().* = @as(f32, @floatFromInt(target_line_number)) * State.row_height - relative_dist;
+        State.viewport.setPosition(pos);
     }
 }
 
 pub fn centerLine() void {
-    const height = State.viewport.bottom - State.viewport.top;
-    const new_top = @as(f32, @floatFromInt(State.buffer.current_line + 3)) * State.row_height - (height / 2.0);
-    State.viewport.top = new_top;
-    State.viewport.bottom = new_top + height;
+    const new_top = @as(f32, @floatFromInt(State.buffer.current_line)) * State.row_height - (State.viewport.height / 2.0);
+    var pos: zalg.Vec2 = State.viewport.position;
+    pos.yMut().* = new_top;
+    State.viewport.setPosition(pos);
 }
 
 pub fn moveWordStartRight() void {

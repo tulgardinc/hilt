@@ -20,7 +20,7 @@ pub fn init(initial_size: usize, allocator: std.mem.Allocator) !Self {
         .gap_start = 0,
         .gap_end = initial_size,
         .allocator = allocator,
-        .current_line = 0,
+        .current_line = 1,
     };
 }
 
@@ -34,7 +34,7 @@ pub fn initFromFile(file_path: []const u8, file_size: usize, buffer_size: usize,
         .gap_start = 0,
         .gap_end = buffer_size - file_size,
         .allocator = allocator,
-        .current_line = 0,
+        .current_line = 1,
     };
 }
 
