@@ -1,6 +1,7 @@
 const std = @import("std");
 const Mode = @import("main.zig").Mode;
 const sapp = @import("sokol").app;
+const State = @import("main.zig").State;
 
 const CodeWithMod = packed struct {
     shift: bool = false,
@@ -135,6 +136,7 @@ pub fn addCommand(self: *Self, bind: []const u8, mode: Mode, action: *const fn (
 }
 
 // This leaves behind empty hashmaps
+// Not tested
 pub fn removeCommand(self: *Self, bind: []const u8, mode: Mode) !void {
     if (bind.len == 0) return error.KeybindDescriptionEmpty;
 
@@ -191,58 +193,72 @@ pub fn removeCommand(self: *Self, bind: []const u8, mode: Mode) !void {
     }
 }
 
+fn handleRegisteredKeybind(self: *Self, mode: Mode, e: *const sapp.Event) !void {
+    if (self.current_maps_ptr == null) {
+        self.current_maps_ptr = self.command_map.getPtr(mode) orelse return error.NoMap;
+    }
+    const current_maps_ptr = self.current_maps_ptr.?;
+
+    switch (e.*.type) {
+        .KEY_DOWN => {
+            const shifted_code: u32 = @bitCast(@intFromEnum(e.*.key_code) << 4);
+            const code_with_mod = shifted_code | e.*.modifiers;
+
+            if (current_maps_ptr.key_map == null) return error.NoKey;
+            const key_map_ptr = &current_maps_ptr.key_map.?;
+            const map_or_action_ptr = key_map_ptr.getPtr(code_with_mod) orelse {
+                self.current_maps_ptr = null;
+                return error.NoKey;
+            };
+            switch (map_or_action_ptr.*) {
+                .maps => |*maps_ptr| {
+                    self.current_maps_ptr = maps_ptr;
+                },
+                .action => |action| {
+                    action();
+                    self.current_maps_ptr = null;
+                },
+            }
+        },
+        .CHAR => {
+            const shifted_code: u32 = @bitCast(e.*.char_code << 4);
+            const code_with_mod = shifted_code;
+
+            if (current_maps_ptr.char_map == null) return error.NoChar;
+            const char_map_ptr = &current_maps_ptr.char_map.?;
+            const map_or_action_ptr = char_map_ptr.getPtr(code_with_mod) orelse {
+                self.current_maps_ptr = null;
+                return error.NoChar;
+            };
+            switch (map_or_action_ptr.*) {
+                .maps => |*maps_ptr| {
+                    self.current_maps_ptr = maps_ptr;
+                },
+                .action => |action| {
+                    action();
+                    self.current_maps_ptr = null;
+                },
+            }
+        },
+        else => {},
+    }
+}
+
 pub fn onInput(self: *Self, mode: Mode, event: [*c]const sapp.Event) void {
     if (event) |e| {
-        if (self.current_maps_ptr == null) {
-            self.current_maps_ptr = self.command_map.getPtr(mode);
-        }
-        const current_maps_ptr = self.current_maps_ptr.?;
-
-        switch (e.*.type) {
-            .KEY_DOWN => {
-                const shifted_code: u32 = @bitCast(@intFromEnum(e.*.key_code) << 4);
-                const code_with_mod = shifted_code | e.*.modifiers;
-
-                if (current_maps_ptr.key_map == null) return;
-                const key_map_ptr = &current_maps_ptr.key_map.?;
-                const map_or_action_ptr = key_map_ptr.getPtr(code_with_mod) orelse {
-                    self.current_maps_ptr = null;
-                    return;
-                };
-                switch (map_or_action_ptr.*) {
-                    .maps => |*maps_ptr| {
-                        self.current_maps_ptr = maps_ptr;
-                    },
-                    .action => |action| {
-                        action();
-                        self.current_maps_ptr = null;
-                        return;
-                    },
+        self.handleRegisteredKeybind(mode, e) catch {
+            if (mode == .insert and e.*.type == .CHAR) {
+                if (State.buffer.hasRange()) {
+                    State.buffer.deleteRange() catch |err| {
+                        std.debug.print("{}\n", .{err});
+                    };
+                    State.buffer.clearRange();
                 }
-            },
-            .CHAR => {
-                const shifted_code: u32 = @bitCast(e.*.char_code << 4);
-                const code_with_mod = shifted_code;
-
-                if (current_maps_ptr.char_map == null) return;
-                const char_map_ptr = &current_maps_ptr.char_map.?;
-                const map_or_action_ptr = char_map_ptr.getPtr(code_with_mod) orelse {
-                    self.current_maps_ptr = null;
-                    return;
+                State.buffer.addChar(@intCast(e.*.char_code)) catch |err| {
+                    std.debug.print("{}\n", .{err});
                 };
-                switch (map_or_action_ptr.*) {
-                    .maps => |*maps_ptr| {
-                        self.current_maps_ptr = maps_ptr;
-                    },
-                    .action => |action| {
-                        action();
-                        self.current_maps_ptr = null;
-                        return;
-                    },
-                }
-            },
-            else => {},
-        }
+            }
+        };
     }
 }
 

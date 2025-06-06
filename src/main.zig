@@ -193,14 +193,18 @@ export fn frame() void {
     State.viewport.height = sapp.heightf();
     State.viewport.update();
 
-    // if (State.viewport.active_coroutine == null) {
-    //     const current_line_y = @as(f32, @floatFromInt(State.buffer.current_line)) * State.row_height;
-    //     if (current_line_y - State.row_height < State.viewport.position.y() + 3 * State.row_height) {
-    //         State.viewport.setPosition(zalg.Vec2.new(0, current_line_y - 4 * State.row_height));
-    //     } else if (current_line_y > State.viewport.position.y() + State.viewport.height - 2 * State.row_height) {
-    //         State.viewport.setPosition(zalg.Vec2.new(0, current_line_y - State.viewport.height + 2 * State.row_height));
-    //     }
-    // }
+    const current_line_y = @as(f32, @floatFromInt(State.buffer.current_line)) * State.row_height;
+    if (current_line_y - State.row_height < State.viewport.position.y() + 3 * State.row_height) {
+        const new_target = zalg.Vec2.new(0, current_line_y - 4 * State.row_height);
+        if (new_target.y() < State.viewport.target_position.y()) {
+            State.viewport.setPosition(new_target);
+        }
+    } else if (current_line_y > State.viewport.position.y() + State.viewport.height - 2 * State.row_height) {
+        const new_target = zalg.Vec2.new(0, current_line_y - State.viewport.height + 2 * State.row_height);
+        if (new_target.y() > State.viewport.target_position.y()) {
+            State.viewport.setPosition(new_target);
+        }
+    }
 
     const ortho = zalg.orthographic(
         State.viewport.position.x(),

@@ -2,6 +2,19 @@ const std = @import("std");
 const State = @import("main.zig").State;
 const zalg = @import("zalgebra");
 
+pub fn switchToNormalMode() void {
+    State.mode = .normal;
+}
+
+pub fn switchToInsertMode() void {
+    State.mode = .insert;
+}
+
+pub fn switchToInsertModeRight() void {
+    moveRight();
+    State.mode = .insert;
+}
+
 pub fn moveLeft() void {
     if (State.buffer.gap_start == 0) return;
     State.buffer.moveGap(State.buffer.gap_start - 1) catch |err| {
@@ -158,4 +171,17 @@ pub fn moveWordEndRight() void {
         std.debug.print("{}\n", .{err});
     };
     State.buffer.desired_offset = State.buffer.getLineOffset();
+}
+
+pub fn deleteLeft() void {
+    if (State.buffer.hasRange()) {
+        State.buffer.deleteRange() catch |err| {
+            std.debug.print("{}\n", .{err});
+        };
+        State.buffer.clearRange();
+    } else {
+        if (State.buffer.getBeforeGap().len > 0) {
+            State.buffer.deleteCharsLeft(1) catch unreachable;
+        }
+    }
 }

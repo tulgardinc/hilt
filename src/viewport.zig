@@ -7,7 +7,6 @@ pub const Viewport = struct {
     height: f32,
     position: zalg.Vec2,
     target_position: zalg.Vec2,
-    active_coroutine: ?CubicEaseOut = null,
     vel: zalg.Vec2,
     accel: zalg.Vec2,
     damping: f32,
@@ -20,7 +19,6 @@ pub const Viewport = struct {
             .height = 0,
             .width = 0,
             .position = zalg.Vec2.zero(),
-            .active_coroutine = null,
             .vel = zalg.Vec2.zero(),
             .accel = zalg.Vec2.zero(),
             .target_position = zalg.Vec2.zero(),
@@ -29,25 +27,12 @@ pub const Viewport = struct {
         };
     }
 
-    // pub fn update(self: *Self) void {
-    //     if (self.active_coroutine) |*routine_ptr| {
-    //         routine_ptr.update(State.delta_time);
-    //         std.debug.print("val: {d}\n", .{routine_ptr.value});
-    //         self.position.yMut().* = routine_ptr.value;
-    //         if (routine_ptr.done()) self.active_coroutine = null;
-    //     }
-    // }
-
     pub fn update(self: *Self) void {
         self.accel = self.vel.mul(zalg.Vec2.set(-self.damping)).sub(self.position.sub(self.target_position).mul(zalg.Vec2.set(self.stiffness)));
         self.vel = self.vel.add(self.accel.mul(zalg.Vec2.set(State.delta_time)));
         self.position = self.position.add(self.vel.mul(zalg.Vec2.set(State.delta_time)));
     }
 
-    // pub fn setPosition(self: *Self, new_position: zalg.Vec2) void {
-    //     std.debug.print("called\n", .{});
-    //     self.active_coroutine = CubicEaseOut.init(self.position.y(), new_position.y(), 0.3);
-    // }
     pub fn setPosition(self: *Self, new_position: zalg.Vec2) void {
         self.target_position = new_position;
     }
