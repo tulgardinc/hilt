@@ -65,73 +65,75 @@ pub fn deinit(self: *Self) void {
     self.command_map.deinit();
 }
 
-pub fn addCommand(self: *Self, bind: []const u8, mode: Mode, action: *const fn () void) !void {
-    if (bind.len == 0) return error.KeybindDescriptionEmpty;
+pub fn addCommand(self: *Self, bind: []const u8, modes: []const Mode, action: *const fn () void) !void {
+    for (modes) |mode| {
+        if (bind.len == 0) return error.KeybindDescriptionEmpty;
 
-    const entry = try self.command_map.getOrPut(mode);
-    if (!entry.found_existing) {
-        entry.value_ptr.* = .{};
-    }
+        const entry = try self.command_map.getOrPut(mode);
+        if (!entry.found_existing) {
+            entry.value_ptr.* = .{};
+        }
 
-    var current_maps_ptr: *ActionMaps = entry.value_ptr;
-    var char_index: usize = 0;
+        var current_maps_ptr: *ActionMaps = entry.value_ptr;
+        var char_index: usize = 0;
 
-    while (char_index < bind.len) {
-        const char: u32 = @intCast(bind[char_index]);
+        while (char_index < bind.len) {
+            const char: u32 = @intCast(bind[char_index]);
 
-        // TODO: escape
-        if (char == '<') {
-            var end_index: usize = 0;
-            for (char_index + 1..bind.len) |i| {
-                if (bind[i] == '>') {
-                    end_index = i;
-                    break;
+            // TODO: escape
+            if (char == '<') {
+                var end_index: usize = 0;
+                for (char_index + 1..bind.len) |i| {
+                    if (bind[i] == '>') {
+                        end_index = i;
+                        break;
+                    }
                 }
+                if (end_index == 0) return error.MalformedBind;
+
+                const code_with_mod = try parseKey(bind[char_index + 1 .. end_index]);
+
+                if (current_maps_ptr.key_map == null) {
+                    current_maps_ptr.key_map = ActionMap.init(self.allocator);
+                }
+                const key_map_ptr = &current_maps_ptr.key_map.?;
+
+                const result = try key_map_ptr.getOrPut(code_with_mod);
+                if (!result.found_existing) {
+                    if (end_index == bind.len - 1) {
+                        result.value_ptr.* = MapOrAction{ .action = action };
+                        break;
+                    } else {
+                        result.value_ptr.* = MapOrAction{ .maps = ActionMaps{} };
+                    }
+                }
+                current_maps_ptr = &result.value_ptr.maps;
+
+                char_index = end_index + 1;
+
+                continue;
             }
-            if (end_index == 0) return error.MalformedBind;
 
-            const code_with_mod = try parseKey(bind[char_index + 1 .. end_index]);
-
-            if (current_maps_ptr.key_map == null) {
-                current_maps_ptr.key_map = ActionMap.init(self.allocator);
+            if (current_maps_ptr.char_map == null) {
+                current_maps_ptr.char_map = ActionMap.init(self.allocator);
             }
-            const key_map_ptr = &current_maps_ptr.key_map.?;
+            const char_map_ptr = &current_maps_ptr.char_map.?;
 
-            const result = try key_map_ptr.getOrPut(code_with_mod);
+            const char_shifted = char << 4;
+
+            const result = try char_map_ptr.getOrPut(char_shifted);
             if (!result.found_existing) {
-                if (end_index == bind.len - 1) {
+                if (char_index == bind.len - 1) {
                     result.value_ptr.* = MapOrAction{ .action = action };
-                    return;
+                    break;
                 } else {
                     result.value_ptr.* = MapOrAction{ .maps = ActionMaps{} };
                 }
             }
             current_maps_ptr = &result.value_ptr.maps;
 
-            char_index = end_index + 1;
-
-            continue;
+            char_index += 1;
         }
-
-        if (current_maps_ptr.char_map == null) {
-            current_maps_ptr.char_map = ActionMap.init(self.allocator);
-        }
-        const char_map_ptr = &current_maps_ptr.char_map.?;
-
-        const char_shifted = char << 4;
-
-        const result = try char_map_ptr.getOrPut(char_shifted);
-        if (!result.found_existing) {
-            if (char_index == bind.len - 1) {
-                result.value_ptr.* = MapOrAction{ .action = action };
-                return;
-            } else {
-                result.value_ptr.* = MapOrAction{ .maps = ActionMaps{} };
-            }
-        }
-        current_maps_ptr = &result.value_ptr.maps;
-
-        char_index += 1;
     }
 }
 

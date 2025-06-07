@@ -48,8 +48,21 @@ pub fn toBufferIndex(self: *const Self, char_index: usize) usize {
 }
 
 pub fn toCharIndex(self: *const Self, buffer_index: usize) usize {
-    if (buffer_index < self.gap_start) return buffer_index;
+    if (buffer_index <= self.gap_start) return buffer_index;
     return buffer_index - self.getGapLength();
+}
+
+pub fn updateCurrentLine(self: *Self) void {
+    var total: usize = 1;
+    for (0..self.gap_start) |i| {
+        if (self.data[i] == '\n') total += 1;
+    }
+    self.current_line = total;
+}
+
+pub fn setGapStart(self: *Self, buffer_index: usize) void {
+    self.gap_start = buffer_index;
+    self.updateCurrentLine();
 }
 
 pub fn addChar(self: *Self, char: u8) !void {
@@ -94,23 +107,41 @@ pub fn moveGap(self: *Self, buffer_index: usize) !void {
     if (buffer_index == self.gap_start) return;
     if (buffer_index > self.data.len or buffer_index < 0) return error.IndexOutOfRange;
 
+    if (self.range_start) |range_start| {
+        std.debug.assert(range_start <= self.range_end);
+
+        if (range_start == self.toCharIndex(self.gap_start)) {
+            if (buffer_index < self.toBufferIndex(self.range_end)) {
+                self.range_start = self.toCharIndex(buffer_index);
+            } else if (buffer_index > self.toBufferIndex(self.range_end)) {
+                self.range_start = self.range_end;
+                self.range_end = self.toCharIndex(buffer_index);
+            }
+        } else if (self.range_end == self.toCharIndex(self.gap_end)) {
+            if (buffer_index > self.toBufferIndex(range_start)) {
+                self.range_end = self.toCharIndex(buffer_index);
+            } else if (buffer_index < self.toBufferIndex(range_start)) {
+                self.range_end = range_start;
+                self.range_start = self.toCharIndex(buffer_index);
+            }
+        }
+    }
+
     if (buffer_index < self.gap_start) {
-        self.current_line -= self.getLineDelta(buffer_index, self.gap_start);
         std.mem.copyBackwards(
             u8,
             self.data[buffer_index + self.getGapLength() .. self.gap_end],
             self.data[buffer_index..self.gap_start],
         );
         self.gap_end -= self.gap_start - buffer_index;
-        self.gap_start = buffer_index;
+        self.setGapStart(buffer_index);
     } else {
-        self.current_line += self.getLineDelta(self.gap_end, buffer_index);
         std.mem.copyForwards(
             u8,
             self.data[self.gap_start .. buffer_index - self.getGapLength()],
             self.data[self.gap_end..buffer_index],
         );
-        self.gap_start += buffer_index - self.gap_end;
+        self.setGapStart(self.gap_start + buffer_index - self.gap_end);
         self.gap_end = buffer_index;
     }
 }
@@ -207,6 +238,7 @@ pub fn moveGapDownByLine(self: *Self) !void {
 }
 
 // === RANGE ===
+// INDEXED IN CHAR INDEX
 
 pub fn rangeRight(self: *Self) !void {
     if (self.gap_end == self.data.len) return error.IndexOutOfRange;
@@ -285,7 +317,7 @@ pub fn deleteRange(self: *Self) !void {
 
     const range_end_idx = self.toBufferIndex(self.range_end);
 
-    self.gap_start = self.range_start.?;
+    self.setGapStart(self.range_start.?);
 
     if (range_end_idx > self.gap_end) {
         self.gap_end = range_end_idx;

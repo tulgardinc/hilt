@@ -4,10 +4,17 @@ const zalg = @import("zalgebra");
 
 pub fn switchToNormalMode() void {
     State.mode = .normal;
+    State.buffer.clearRange();
 }
 
 pub fn switchToInsertMode() void {
     State.mode = .insert;
+}
+
+pub fn switchToVisualMode() void {
+    State.mode = .visual;
+    State.buffer.range_start = State.buffer.gap_start;
+    State.buffer.range_end = State.buffer.gap_start + 1;
 }
 
 pub fn switchToInsertModeRight() void {
@@ -43,9 +50,19 @@ pub fn moveDown() void {
 }
 
 pub fn deleteAtPoint() void {
+    std.debug.print("CALLED DELETE\n", .{});
     State.buffer.deleteCharsRight(1) catch |err| {
         std.debug.print("{}\n", .{err});
     };
+}
+
+pub fn deleteRange() void {
+    if (State.buffer.hasRange()) {
+        State.buffer.deleteRange() catch |err| {
+            std.debug.print("{}\n", .{err});
+        };
+        switchToNormalMode();
+    }
 }
 
 pub fn moveTop() void {
@@ -174,14 +191,7 @@ pub fn moveWordEndRight() void {
 }
 
 pub fn deleteLeft() void {
-    if (State.buffer.hasRange()) {
-        State.buffer.deleteRange() catch |err| {
-            std.debug.print("{}\n", .{err});
-        };
-        State.buffer.clearRange();
-    } else {
-        if (State.buffer.getBeforeGap().len > 0) {
-            State.buffer.deleteCharsLeft(1) catch unreachable;
-        }
+    if (State.buffer.getBeforeGap().len > 0) {
+        State.buffer.deleteCharsLeft(1) catch unreachable;
     }
 }

@@ -7,9 +7,12 @@ layout(binding = 0) uniform vs_params {
 };
 
 in vec2 pos;
+in vec2 offset;
+in vec2 scale;
 
 void main() {
-    gl_Position = mvp * vec4(pos.xy, 0.0, 1.0);
+    vec2 world_pos = pos * scale + offset;
+    gl_Position = mvp * vec4(world_pos, 0.0, 1.0);
 }
 @end
 

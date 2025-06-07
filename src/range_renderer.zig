@@ -1,17 +1,20 @@
 const std = @import("std");
 const sg = @import("sokol").gfx;
 const range_shd = @import("shaders/compiled/range.glsl.zig");
+const State = @import("main.zig").State;
 
 bindings: sg.Bindings,
 pipeline: sg.Pipeline,
-vertices: [512]Vertex = undefined,
-vertex_count: usize = 0,
+instances: [512]Instance = undefined,
+instance_count: usize = 0,
 
 const Self = @This();
 
-const Vertex = packed struct {
+const Instance = packed struct {
     x: f32,
     y: f32,
+    w: f32,
+    h: f32,
 };
 
 pub fn init() Self {
@@ -20,9 +23,23 @@ pub fn init() Self {
         .pipeline = undefined,
     };
 
+    // Bottom left origin quad
     range_renderer.bindings.vertex_buffers[0] = sg.makeBuffer(.{
+        .data = sg.asRange(
+            &[_]f32{
+                0.0, -1.0,
+                1.0, -1.0,
+                0.0, 0.0,
+                1.0, -1.0,
+                1.0, 0.0,
+                0.0, 0.0,
+            },
+        ),
+    });
+
+    range_renderer.bindings.vertex_buffers[1] = sg.makeBuffer(.{
         .usage = .{ .dynamic_update = true },
-        .size = @sizeOf(Vertex) * 512,
+        .size = @sizeOf(Instance) * range_renderer.instances.len,
     });
 
     const pip_descriptor: sg.PipelineDesc = .{
@@ -30,7 +47,10 @@ pub fn init() Self {
         .layout = init: {
             var l = sg.VertexLayoutState{};
             l.buffers[0].step_func = .PER_VERTEX;
-            l.attrs[range_shd.ATTR_range_pos] = .{ .format = .FLOAT2 };
+            l.buffers[1].step_func = .PER_INSTANCE;
+            l.attrs[range_shd.ATTR_range_pos] = .{ .format = .FLOAT2, .buffer_index = 0 };
+            l.attrs[range_shd.ATTR_range_offset] = .{ .format = .FLOAT2, .buffer_index = 1 };
+            l.attrs[range_shd.ATTR_range_scale] = .{ .format = .FLOAT2, .buffer_index = 1 };
             break :init l;
         },
     };
@@ -41,44 +61,22 @@ pub fn init() Self {
 }
 
 pub fn setupDraw(self: *Self) void {
-    self.vertex_count = 0;
+    self.instance_count = 0;
 }
 
-pub fn emitLeftEdge(self: *Self, x0: f32, y0: f32, y1: f32) void {
-    // bottom left
-    const p1: Vertex = .{
-        .x = x0,
-        .y = y0,
-    };
-    // top left
-    const p2: Vertex = .{
-        .x = x0,
-        .y = y1,
+pub fn emitInstanceStart(self: *Self, x: f32, y: f32) void {
+    const instance: Instance = .{
+        .x = x,
+        .y = y,
+        .w = 0,
+        .h = State.row_height,
     };
 
-    self.vertices[self.vertex_count] = p1;
-    self.vertices[self.vertex_count + 1] = p2;
+    self.instances[self.instance_count] = instance;
 }
 
-pub fn emitRightEdge(self: *Self, x1: f32, y0: f32, y1: f32) void {
-    // top right
-    const p3: Vertex = .{
-        .x = x1,
-        .y = y1,
-    };
+pub fn emitInstanceEnd(self: *Self, x1: f32) void {
+    self.instances[self.instance_count].w = x1 - self.instances[self.instance_count].x;
 
-    // bottom right
-    const p4: Vertex = .{
-        .x = x1,
-        .y = y0,
-    };
-
-    const p1 = self.vertices[self.vertex_count];
-
-    self.vertices[self.vertex_count + 2] = p3;
-    self.vertices[self.vertex_count + 3] = p1;
-    self.vertices[self.vertex_count + 4] = p3;
-    self.vertices[self.vertex_count + 5] = p4;
-
-    self.vertex_count += 6;
+    self.instance_count += 1;
 }

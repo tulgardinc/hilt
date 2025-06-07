@@ -110,14 +110,22 @@ fn drawChar(ds: *DrawingState, char: u8) void {
     if (State.buffer.range_start) |range_start| {
         if (ds.char_index == range_start) {
             ds.drawing_range = true;
-            State.range_renderer.emitLeftEdge(ds.pen_x, ds.pen_y, ds.pen_y - State.row_height);
+            if (range_start == State.buffer.gap_start) {
+                State.range_renderer.emitInstanceStart(State.cursor.position.x() + State.cursor_nwidth, ds.pen_y + State.font_descender);
+            } else {
+                State.range_renderer.emitInstanceStart(ds.pen_x, ds.pen_y + State.font_descender);
+            }
         }
     }
 
     if (ds.drawing_range) {
         if (ds.char_index == State.buffer.range_end) {
             ds.drawing_range = false;
-            State.range_renderer.emitRightEdge(ds.pen_x, ds.pen_y, ds.pen_y - State.row_height);
+            if (State.buffer.range_end == State.buffer.toCharIndex(State.buffer.gap_end)) {
+                State.range_renderer.emitInstanceEnd(State.cursor.position.x() + State.cursor_nwidth);
+            } else {
+                State.range_renderer.emitInstanceEnd(ds.pen_x);
+            }
         }
     }
 
@@ -133,7 +141,7 @@ fn drawChar(ds: *DrawingState, char: u8) void {
         ds.vertex_index += 6;
     } else {
         if (ds.drawing_range) {
-            State.range_renderer.emitRightEdge(ds.pen_x, ds.pen_y, ds.pen_y - State.row_height);
+            State.range_renderer.emitInstanceEnd(ds.pen_x);
         }
 
         const line_number_slice = std.fmt.bufPrintIntToSlice(&ds.line_number_buffer, ds.current_line, 10, .lower, .{});
@@ -155,7 +163,7 @@ fn drawChar(ds: *DrawingState, char: u8) void {
         ds.pen_x = 80;
         ds.pen_y += State.row_height;
         if (ds.drawing_range) {
-            State.range_renderer.emitLeftEdge(ds.pen_x, ds.pen_y, ds.pen_y - State.row_height);
+            State.range_renderer.emitInstanceStart(ds.pen_x, ds.pen_y + State.font_descender);
         }
     }
 
@@ -177,16 +185,18 @@ export fn frame() void {
     drawing_state.cursor_x = drawing_state.pen_x;
     drawing_state.cursor_y = drawing_state.pen_y;
 
+    if (drawing_state.drawing_range) {
+        State.range_renderer.emitInstanceEnd(State.cursor.position.x() + State.cursor_nwidth);
+        drawing_state.drawing_range = false;
+    }
+
     for (State.buffer.getAfterGap()) |char| {
         drawChar(&drawing_state, char);
     }
 
     if (drawing_state.drawing_range) {
-        State.range_renderer.emitRightEdge(
-            drawing_state.pen_x,
-            drawing_state.pen_y,
-            drawing_state.pen_y - State.row_height,
-        );
+        State.range_renderer.emitInstanceEnd(drawing_state.pen_x);
+        drawing_state.drawing_range = false;
     }
 
     State.viewport.width = sapp.widthf();
@@ -254,10 +264,17 @@ export fn frame() void {
         .cursor_dimensions = zalg.Vec2.new(cursor_width, State.cursor_height).toArray(),
     };
 
-    if (State.buffer.getTextLength() > 0) {
+    if (State.text_renderer.instance_count > 0) {
         sg.updateBuffer(
             State.text_renderer.bindings.vertex_buffers[1],
             sg.asRange(State.text_renderer.instance_data[0..State.text_renderer.instance_count]),
+        );
+    }
+
+    if (State.range_renderer.instance_count > 0) {
+        sg.updateBuffer(
+            State.range_renderer.bindings.vertex_buffers[1],
+            sg.asRange(State.range_renderer.instances[0..State.range_renderer.instance_count]),
         );
     }
 
@@ -269,7 +286,7 @@ export fn frame() void {
     sg.applyPipeline(State.range_renderer.pipeline);
     sg.applyBindings(State.range_renderer.bindings);
     sg.applyUniforms(range_shd.UB_vs_params, sg.asRange(&range_shd.VsParams{ .mvp = ortho }));
-    sg.draw(0, @intCast(State.range_renderer.vertex_count), 1);
+    sg.draw(0, 6, @intCast(State.range_renderer.instance_count));
     // draw cursor
     sg.applyPipeline(State.cursor_renderer.pipeline);
     sg.applyBindings(State.cursor_renderer.bindings);

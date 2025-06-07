@@ -152,7 +152,7 @@ fn buildAtlas(self: *Self) !void {
     try face.setPixelSizes(0, 24);
 
     State.row_height = @as(f32, @floatFromInt(face.size().metrics().height)) / 64;
-    State.font_descender = @as(f32, @floatFromInt(face.size().metrics().descender)) / 64;
+    State.font_descender = @abs(@as(f32, @floatFromInt(face.size().metrics().descender)) / 64);
     State.cursor_height = @as(f32, @floatFromInt(face.size().metrics().ascender - face.size().metrics().descender)) / 64;
 
     var pen_x: usize = 1;
