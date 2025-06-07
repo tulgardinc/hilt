@@ -11,10 +11,14 @@ const setDefaultKeybinds = @import("default_keybinds.zig").setDefaultBinds;
 const TextRenderer = @import("text_renderer.zig");
 const CursorRenderer = @import("cursor_renderer.zig");
 const RangeRenderer = @import("range_renderer.zig");
+const LineHighlightRenderer = @import("line_highlight_renderer.zig");
+const LineNumberRenderer = @import("line_number_renderer.zig");
 
 const cursor_shd = @import("shaders/compiled/cursor.glsl.zig");
 const text_shd = @import("shaders/compiled/text.glsl.zig");
 const range_shd = @import("shaders/compiled/range.glsl.zig");
+const hl_shd = @import("shaders/compiled/line_highlight.glsl.zig");
+const ln_shd = @import("shaders/compiled/line_number.glsl.zig");
 
 const sokol = @import("sokol");
 const sg = sokol.gfx;
@@ -33,6 +37,9 @@ pub const State = struct {
     pub var text_renderer: TextRenderer = undefined;
     pub var cursor_renderer: CursorRenderer = undefined;
     pub var range_renderer: RangeRenderer = undefined;
+    pub var hl_renderer: LineHighlightRenderer = undefined;
+    pub var ln_renderer: LineNumberRenderer = undefined;
+
     pub var buffer: Buffer = undefined;
     pub var mode: Mode = .normal;
 
@@ -67,14 +74,17 @@ export fn init() void {
 
     State.cursor_renderer = CursorRenderer.init();
     State.range_renderer = RangeRenderer.init();
+    State.hl_renderer = LineHighlightRenderer.init();
     State.command_handler = CommandHandler.init(allocator);
+
     State.viewport = Viewport.init();
     State.viewport.height = sapp.heightf();
     State.viewport.width = sapp.widthf();
+    State.text_renderer.initRenderer();
+
+    State.ln_renderer = LineNumberRenderer.init();
 
     setDefaultKeybinds(&State.command_handler) catch unreachable;
-
-    State.text_renderer.initRenderer();
 
     State.cursor_nwidth = State.text_renderer.glyphs[97].w;
     State.cursor_nchar_x_offset = State.text_renderer.glyphs[97].bearing_x;
@@ -150,11 +160,11 @@ fn drawChar(ds: *DrawingState, char: u8) void {
         while (ln_index > 0) {
             ln_index -= 1;
             const glyph = State.text_renderer.glyphs[line_number_slice[ln_index]];
-            State.text_renderer.emitInstanceData(
+            State.ln_renderer.emitInstanceData(
                 glyph,
                 ln_pen_x,
                 ds.pen_y,
-                if (ds.current_line == State.buffer.current_line) zalg.Vec4.new(1.0, 0.0, 0.0, 1.0) else zalg.Vec4.one(),
+                zalg.Vec4.one(),
             );
             ln_pen_x -= @floatFromInt(glyph.advance);
         }
@@ -177,6 +187,7 @@ export fn frame() void {
 
     State.range_renderer.setupDraw();
     State.text_renderer.setupDraw();
+    State.ln_renderer.setupDraw();
 
     for (State.buffer.getBeforeGap()) |char| {
         drawChar(&drawing_state, char);
@@ -255,19 +266,32 @@ export fn frame() void {
         .time = if (State.mode == .insert) @floatCast(stime.ms(stime.now()) - State.start_time) else 0,
     };
 
+    // Same for ln numbers
     const text_vs_params: text_shd.VsParams = .{
         .mvp = ortho,
     };
-
     const text_fs_params: text_shd.FsParams = .{
         .cursor_position = State.cursor.position.toArray(),
         .cursor_dimensions = zalg.Vec2.new(cursor_width, State.cursor_height).toArray(),
+    };
+
+    const hl_vs_params: hl_shd.VsParams = .{
+        .mvp = ortho
+            .mul(zalg.Mat4.fromTranslate(zalg.Vec3.new(0, State.cursor.position.y(), 0)))
+            .mul(zalg.Mat4.fromScale(zalg.Vec3.new(sapp.widthf(), State.cursor_height, 0))),
     };
 
     if (State.text_renderer.instance_count > 0) {
         sg.updateBuffer(
             State.text_renderer.bindings.vertex_buffers[1],
             sg.asRange(State.text_renderer.instance_data[0..State.text_renderer.instance_count]),
+        );
+    }
+
+    if (State.ln_renderer.instance_count > 0) {
+        sg.updateBuffer(
+            State.ln_renderer.bindings.vertex_buffers[1],
+            sg.asRange(State.ln_renderer.instances[0..State.ln_renderer.instance_count]),
         );
     }
 
@@ -282,11 +306,22 @@ export fn frame() void {
         .swapchain = sglue.swapchain(),
         .action = State.pass_action,
     });
+    // draw active line highlight
+    sg.applyPipeline(State.hl_renderer.pipeline);
+    sg.applyBindings(State.hl_renderer.bindings);
+    sg.applyUniforms(hl_shd.UB_vs_params, sg.asRange(&hl_vs_params));
+    sg.draw(0, 6, 1);
     // draw range
     sg.applyPipeline(State.range_renderer.pipeline);
     sg.applyBindings(State.range_renderer.bindings);
     sg.applyUniforms(range_shd.UB_vs_params, sg.asRange(&range_shd.VsParams{ .mvp = ortho }));
     sg.draw(0, 6, @intCast(State.range_renderer.instance_count));
+    // draw line numbers
+    sg.applyPipeline(State.ln_renderer.pipeline);
+    sg.applyBindings(State.ln_renderer.bindings);
+    sg.applyUniforms(ln_shd.UB_vs_params, sg.asRange(&text_vs_params));
+    sg.applyUniforms(ln_shd.UB_fs_params, sg.asRange(&text_fs_params));
+    sg.draw(0, 6, @intCast(State.ln_renderer.instance_count));
     // draw cursor
     sg.applyPipeline(State.cursor_renderer.pipeline);
     sg.applyBindings(State.cursor_renderer.bindings);

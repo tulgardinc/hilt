@@ -21,6 +21,8 @@ instance_count: usize = 0,
 instance_data: []TextIndexData,
 allocator: std.mem.Allocator,
 
+font_image: sg.Image = undefined,
+
 const Self = @This();
 
 const TextIndexData = packed struct {
@@ -30,7 +32,7 @@ const TextIndexData = packed struct {
     color: packed struct { r: f32, g: f32, b: f32, a: f32 },
 };
 
-const Glyph = struct {
+pub const Glyph = struct {
     u0: f32,
     v0: f32,
     u1: f32,
@@ -93,7 +95,8 @@ pub fn initRenderer(self: *Self) void {
         .pixel_format = .R8,
     };
     image_descriptor.data.subimage[0][0] = sg.asRange(&self.font_atlas);
-    self.bindings.images[text_shd.IMG_tex] = sg.makeImage(image_descriptor);
+    self.font_image = sg.makeImage(image_descriptor);
+    self.bindings.images[text_shd.IMG_tex] = self.font_image;
 
     var pip_descriptor: sg.PipelineDesc = .{
         .cull_mode = .BACK,
