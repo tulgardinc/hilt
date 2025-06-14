@@ -27,14 +27,14 @@ pub fn moveLeft() void {
     State.buffer.moveGap(State.buffer.gap_start - 1) catch |err| {
         std.debug.print("{}\n", .{err});
     };
-    State.buffer.desired_offset = State.buffer.getLineOffset();
+    State.buffer.desired_offset = State.buffer.getCurrentLineOffset();
 }
 
 pub fn moveRight() void {
     State.buffer.moveGap(State.buffer.gap_end + 1) catch |err| {
         std.debug.print("{}\n", .{err});
     };
-    State.buffer.desired_offset = State.buffer.getLineOffset();
+    State.buffer.desired_offset = State.buffer.getCurrentLineOffset();
 }
 
 pub fn moveUp() void {
@@ -84,7 +84,7 @@ pub fn upByHalf() void {
     const row_count: usize = @as(usize, @intFromFloat(half_height)) / @as(usize, @intFromFloat(State.row_height));
     if (State.buffer.current_line < row_count) {
         State.buffer.moveGap(0) catch undefined;
-        State.buffer.desired_offset = State.buffer.getLineOffset();
+        State.buffer.desired_offset = State.buffer.getCurrentLineOffset();
         return;
     }
     const target_line_number = State.buffer.current_line - row_count;
@@ -129,14 +129,14 @@ pub fn moveWordStartRight() void {
             State.buffer.moveGap(i) catch |err| {
                 std.debug.print("{}\n", .{err});
             };
-            State.buffer.desired_offset = State.buffer.getLineOffset();
+            State.buffer.desired_offset = State.buffer.getCurrentLineOffset();
             return;
         }
     }
     State.buffer.moveGap(State.buffer.data.len - State.buffer.getGapLength()) catch |err| {
         std.debug.print("{}\n", .{err});
     };
-    State.buffer.desired_offset = State.buffer.getLineOffset();
+    State.buffer.desired_offset = State.buffer.getCurrentLineOffset();
 }
 
 pub fn moveWordStartLeft() void {
@@ -152,7 +152,7 @@ pub fn moveWordStartLeft() void {
                 State.buffer.moveGap(i) catch |err| {
                     std.debug.print("{}\n", .{err});
                 };
-                State.buffer.desired_offset = State.buffer.getLineOffset();
+                State.buffer.desired_offset = State.buffer.getCurrentLineOffset();
                 return;
             }
         } else {
@@ -162,7 +162,7 @@ pub fn moveWordStartLeft() void {
     State.buffer.moveGap(0) catch |err| {
         std.debug.print("{}\n", .{err});
     };
-    State.buffer.desired_offset = State.buffer.getLineOffset();
+    State.buffer.desired_offset = State.buffer.getCurrentLineOffset();
 }
 
 pub fn moveWordEndRight() void {
@@ -177,7 +177,7 @@ pub fn moveWordEndRight() void {
                 State.buffer.moveGap(i) catch |err| {
                     std.debug.print("{}\n", .{err});
                 };
-                State.buffer.desired_offset = State.buffer.getLineOffset();
+                State.buffer.desired_offset = State.buffer.getCurrentLineOffset();
                 return;
             }
         } else {
@@ -187,7 +187,7 @@ pub fn moveWordEndRight() void {
     State.buffer.moveGap(State.buffer.data.len - State.buffer.getGapLength()) catch |err| {
         std.debug.print("{}\n", .{err});
     };
-    State.buffer.desired_offset = State.buffer.getLineOffset();
+    State.buffer.desired_offset = State.buffer.getCurrentLineOffset();
 }
 
 pub fn deleteLeft() void {

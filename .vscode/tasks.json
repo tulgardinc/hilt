@@ -1,0 +1,17 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "zig build debug",
+            "type": "shell",
+            "command": "zig",
+            "args": [
+                "build",
+                "-Doptimize=Debug",
+                "-Dtarget=x86_64-windows-gnu"
+            ],
+            "group": "build",
+            "problemMatcher": []
+        }
+    ]
+}

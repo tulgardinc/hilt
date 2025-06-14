@@ -91,16 +91,43 @@ pub fn deleteCharsRight(self: *Self, amount: usize) !void {
     self.gap_end += amount;
 }
 
-pub fn getLineOffset(self: *const Self) usize {
-    var i: usize = self.gap_start;
+pub fn getLineStart(self: *const Self, buffer_index: usize) usize {
+    var i: usize = buffer_index;
     while (i > 0) {
         i -= 1;
+        if (i == self.gap_end) {
+            i = self.gap_start;
+            continue;
+        }
+
         if (self.data[i] == '\n') {
             i += 1;
             break;
         }
     }
-    return self.gap_start - i;
+    return i;
+}
+
+pub fn getLineEnd(self: *const Self, buffer_index: usize) usize {
+    var i: usize = buffer_index;
+    while (i < self.data.len) {
+        if (i == self.gap_start) {
+            i = self.gap_end;
+            continue;
+        }
+
+        if (self.data[i] == '\n') {
+            break;
+        }
+        i += 1;
+    }
+    return i;
+}
+
+//pub fn getLineStartWithChar
+
+pub fn getCurrentLineOffset(self: *const Self) usize {
+    return self.gap_start - self.getLineStart(self.gap_start);
 }
 
 pub fn moveGap(self: *Self, buffer_index: usize) !void {
