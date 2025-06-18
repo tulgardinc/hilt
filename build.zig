@@ -1,7 +1,8 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{ .default_target = .{ .os_tag = .windows } });
+    // const target = b.standardTargetOptions(.{ .default_target = .{ .os_tag = .windows } });
+    const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
     const dep_sokol = b.dependency("sokol", .{ .target = target, .optimize = optimize });
@@ -22,6 +23,11 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("sokol", dep_sokol.module("sokol"));
     exe.root_module.addImport("zalgebra", dep_zalgebra.module("zalgebra"));
     exe.root_module.addImport("mach-freetype", dep_freetype.module("mach-freetype"));
+    exe.linkSystemLibrary("GL");
+    exe.linkSystemLibrary("X11");
+    exe.linkSystemLibrary("Xi");
+    exe.linkSystemLibrary("Xcursor");
+    exe.linkSystemLibrary("asound");
 
     b.installArtifact(exe);
 
@@ -79,7 +85,7 @@ pub fn build(b: *std.Build) void {
             "-o",
             new_name,
             "-l",
-            "hlsl5",
+            "glsl410",
             "-f",
             "sokol_zig",
         });
