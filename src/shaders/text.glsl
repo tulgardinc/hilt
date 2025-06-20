@@ -2,7 +2,6 @@
 @ctype mat4 z.Mat4
 
 @vs vs
-// @glsl_options flip_vert_y
 
 layout(binding = 0) uniform vs_params {
     mat4 mvp;
