@@ -99,7 +99,7 @@ pub fn initRenderer(self: *Self) void {
     self.bindings.images[text_shd.IMG_tex] = self.font_image;
 
     var pip_descriptor: sg.PipelineDesc = .{
-        .cull_mode = .BACK,
+        //.cull_mode = .BACK,
         .shader = sg.makeShader(text_shd.textShaderDesc(sg.queryBackend())),
         .depth = .{
             .compare = .LESS_EQUAL,

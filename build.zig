@@ -1,7 +1,6 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
-    // const target = b.standardTargetOptions(.{ .default_target = .{ .os_tag = .windows } });
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -20,14 +19,15 @@ pub fn build(b: *std.Build) void {
         .root_module = exe_mod,
     });
 
-    exe.root_module.addImport("sokol", dep_sokol.module("sokol"));
-    exe.root_module.addImport("zalgebra", dep_zalgebra.module("zalgebra"));
-    exe.root_module.addImport("mach-freetype", dep_freetype.module("mach-freetype"));
     exe.linkSystemLibrary("GL");
     exe.linkSystemLibrary("X11");
     exe.linkSystemLibrary("Xi");
     exe.linkSystemLibrary("Xcursor");
     exe.linkSystemLibrary("asound");
+
+    exe.root_module.addImport("sokol", dep_sokol.module("sokol"));
+    exe.root_module.addImport("zalgebra", dep_zalgebra.module("zalgebra"));
+    exe.root_module.addImport("mach-freetype", dep_freetype.module("mach-freetype"));
 
     b.installArtifact(exe);
 
