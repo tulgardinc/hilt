@@ -83,30 +83,34 @@ pub fn build(b: *std.Build) void {
         ) catch unreachable;
 
         const cmd = blk: {
-            if (target_os == .windows) {
-                break :blk b.addSystemCommand(&[_][]const u8{
-                    "./sokol-tools/zig-out/bin/sokol-shdc",
-                    "-i",
-                    path,
-                    "-o",
-                    new_name,
-                    "-l",
-                    "hlsl5",
-                    "-f",
-                    "sokol_zig",
-                });
-            } else if (target_os == .linux) {
-                b.addSystemCommand(&[_][]const u8{
-                    "./sokol-tools/zig-out/bin/sokol-shdc",
-                    "-i",
-                    path,
-                    "-o",
-                    new_name,
-                    "-l",
-                    "glsl410",
-                    "-f",
-                    "sokol_zig",
-                });
+            switch (target_os) {
+                .windows => {
+                    break :blk b.addSystemCommand(&[_][]const u8{
+                        "./sokol-tools/zig-out/bin/sokol-shdc",
+                        "-i",
+                        path,
+                        "-o",
+                        new_name,
+                        "-l",
+                        "hlsl5",
+                        "-f",
+                        "sokol_zig",
+                    });
+                },
+                .linux => {
+                    break :blk b.addSystemCommand(&[_][]const u8{
+                        "./sokol-tools/zig-out/bin/sokol-shdc",
+                        "-i",
+                        path,
+                        "-o",
+                        new_name,
+                        "-l",
+                        "glsl410",
+                        "-f",
+                        "sokol_zig",
+                    });
+                },
+                else => unreachable,
             }
         };
 
