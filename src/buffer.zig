@@ -85,7 +85,7 @@ pub fn addChar(self: *Self, char: u8) !void {
     self.data[self.gap_start] = char;
     self.gap_start += 1;
 
-    self.updateLineOffsets(self.current_line - 1, 1);
+    self.updateLineOffsets(self.current_line - 1);
 }
 
 pub fn addString(self: *Self, chars: []const u8) !void {
@@ -94,21 +94,10 @@ pub fn addString(self: *Self, chars: []const u8) !void {
     std.mem.copyForwards(u8, self.data[self.gap_start .. self.gap_start + chars.len], chars);
     self.gap_start += chars.len;
 
-    self.updateLineOffsets(self.current_line, chars.len);
+    self.updateLineOffsets(self.current_line);
 }
 
-fn updateLineOffsets(self: *Self, start_line_index: usize, delta: i32) void {
-    if (delta == 0) return;
-    // var index = start_line_index + 1;
-    // while (index < self.line_count) {
-    //     if (delta > 0) {
-    //         self.line_offsets[index] += @as(u32, @intCast(delta));
-    //     } else {
-    //         self.line_offsets[index] -= @as(u32, @intCast(@abs(delta)));
-    //     }
-    //     index += 1;
-    // }
-
+fn updateLineOffsets(self: *Self, start_line_index: usize) void {
     var line_count: usize = if (start_line_index == 0) 0 else start_line_index - 1;
     var char_index: usize = self.line_offsets[line_count];
     var start: u32 = @intCast(char_index);
@@ -129,7 +118,7 @@ pub fn deleteCharsLeft(self: *Self, amount: usize) !void {
     self.gap_start -= amount;
 
     self.updateCurrentLine();
-    self.updateLineOffsets(self.current_line - 1, -@as(i32, @intCast(amount)));
+    self.updateLineOffsets(self.current_line - 1);
 }
 
 pub fn deleteCharsRight(self: *Self, amount: usize) !void {
@@ -138,7 +127,7 @@ pub fn deleteCharsRight(self: *Self, amount: usize) !void {
     self.gap_end += amount;
 
     self.updateCurrentLine();
-    self.updateLineOffsets(self.current_line - 1, -@as(i32, @intCast(amount)));
+    self.updateLineOffsets(self.current_line - 1);
 }
 
 pub fn getLineStart(self: *const Self) usize {
@@ -304,6 +293,9 @@ pub fn deleteRange(self: *Self) !void {
     if (range_end_idx > self.gap_end) {
         self.gap_end = range_end_idx;
     }
+
+    self.updateCurrentLine();
+    self.updateLineOffsets(self.current_line - 1);
 }
 
 pub fn hasRange(self: *const Self) bool {

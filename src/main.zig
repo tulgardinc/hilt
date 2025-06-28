@@ -171,26 +171,9 @@ fn drawChar(ds: *DrawingState, char: u8) void {
         if (ds.drawing_range) {
             State.range_renderer.emitInstanceEnd(ds.pen_x);
         }
-
-        // const line_number_slice = std.fmt.bufPrintIntToSlice(&ds.line_number_buffer, ds.current_line, 10, .lower, .{});
-        // var ln_index = line_number_slice.len;
-        // var ln_pen_x: f32 = 50.0;
-        // while (ln_index > 0) {
-        //     ln_index -= 1;
-        //     const glyph = State.font_atlas.glyphs[line_number_slice[ln_index]];
-        //     State.ln_renderer.emitInstanceData(
-        //         glyph,
-        //         ln_pen_x,
-        //         pen_y,
-        //         zalg.Vec4.one(),
-        //     );
-        //     ln_pen_x -= @floatFromInt(glyph.advance);
-        // }
-        // ds.current_line += 1;
-        //
         ds.pen_x = 80;
         if (ds.drawing_range) {
-            State.range_renderer.emitInstanceStart(ds.pen_x, pen_y + State.font_descender);
+            State.range_renderer.emitInstanceStart(ds.pen_x, pen_y + State.row_height + State.font_descender);
         }
     }
 
@@ -217,6 +200,13 @@ export fn frame() void {
 
     drawing_state.cursor_x = drawing_state.pen_x;
     drawing_state.cursor_y = 0;
+
+    if (State.buffer.range_start) |range_start| {
+        if (State.buffer.toBufferIndex(State.buffer.data[State.buffer.line_offsets[top_line]]) == range_start) {
+            State.range_renderer.emitInstanceStart(drawing_state.pen_x, @as(f32, @floatFromInt(top_line)) * State.row_height + State.font_descender);
+            drawing_state.drawing_range = true;
+        }
+    }
 
     for (top_line..bottom_line) |line_index| {
         const line_number_slice = std.fmt.bufPrintIntToSlice(&drawing_state.line_number_buffer, line_index + 1, 10, .lower, .{});
