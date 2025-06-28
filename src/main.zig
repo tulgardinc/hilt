@@ -13,6 +13,7 @@ const CursorRenderer = @import("cursor_renderer.zig");
 const RangeRenderer = @import("range_renderer.zig");
 const LineHighlightRenderer = @import("line_highlight_renderer.zig");
 const LineNumberRenderer = @import("line_number_renderer.zig");
+const FontAtlas = @import("font_atlas.zig");
 
 const cursor_shd = @import("shaders/compiled/cursor.glsl.zig");
 const text_shd = @import("shaders/compiled/text.glsl.zig");
@@ -39,6 +40,7 @@ pub const State = struct {
     pub var range_renderer: RangeRenderer = undefined;
     pub var hl_renderer: LineHighlightRenderer = undefined;
     pub var ln_renderer: LineNumberRenderer = undefined;
+    pub var font_atlas: FontAtlas = undefined;
 
     pub var buffer: Buffer = undefined;
     pub var mode: Mode = .normal;
@@ -72,22 +74,36 @@ export fn init() void {
 
     State.start_time = stime.ms(stime.now());
 
+    State.viewport = Viewport.init();
+    State.viewport.height = sapp.heightf();
+    State.viewport.width = sapp.widthf();
+
     State.cursor_renderer = CursorRenderer.init();
     State.range_renderer = RangeRenderer.init();
     State.hl_renderer = LineHighlightRenderer.init();
     State.command_handler = CommandHandler.init(allocator);
 
-    State.viewport = Viewport.init();
-    State.viewport.height = sapp.heightf();
-    State.viewport.width = sapp.widthf();
+    State.font_atlas = FontAtlas.init() catch undefined;
+
+    State.cursor_nwidth = State.font_atlas.glyphs[97].w;
+    State.cursor_nchar_x_offset = State.font_atlas.glyphs[97].bearing_x;
+
+    const max_char_count: usize = @intFromFloat((@ceil(State.viewport.height / State.row_height) + 30) * @ceil(State.viewport.width / State.cursor_nwidth));
+    std.debug.print("max char count: {}\n", .{max_char_count});
+    State.text_renderer = TextRenderer.init(
+        max_char_count,
+        State.font_atlas,
+        allocator,
+    ) catch undefined;
+
     State.text_renderer.initRenderer();
 
     State.ln_renderer = LineNumberRenderer.init();
 
     setDefaultKeybinds(&State.command_handler) catch unreachable;
 
-    State.cursor_nwidth = State.text_renderer.glyphs[97].w;
-    State.cursor_nchar_x_offset = State.text_renderer.glyphs[97].bearing_x;
+    State.cursor_nwidth = State.font_atlas.glyphs[97].w;
+    State.cursor_nchar_x_offset = State.font_atlas.glyphs[97].bearing_x;
 
     State.pass_action.colors[0] = .{
         .load_action = .CLEAR,
@@ -101,8 +117,8 @@ export fn init() void {
 }
 
 const DrawingState = struct {
+    line_index: usize = 0,
     pen_x: f32 = 80.0,
-    pen_y: f32 = 0.0,
 
     line_number_buffer: [16]u8 = undefined,
     current_line: usize = 1,
@@ -117,13 +133,15 @@ const DrawingState = struct {
 };
 
 fn drawChar(ds: *DrawingState, char: u8) void {
+    const pen_y = @as(f32, @floatFromInt(ds.line_index)) * State.row_height;
+
     if (State.buffer.range_start) |range_start| {
         if (ds.char_index == range_start) {
             ds.drawing_range = true;
             if (range_start == State.buffer.gap_start) {
-                State.range_renderer.emitInstanceStart(State.cursor.position.x() + State.cursor_nwidth, ds.pen_y + State.font_descender);
+                State.range_renderer.emitInstanceStart(State.cursor.position.x() + State.cursor_nwidth, pen_y + State.font_descender);
             } else {
-                State.range_renderer.emitInstanceStart(ds.pen_x, ds.pen_y + State.font_descender);
+                State.range_renderer.emitInstanceStart(ds.pen_x, pen_y + State.font_descender);
             }
         }
     }
@@ -140,11 +158,11 @@ fn drawChar(ds: *DrawingState, char: u8) void {
     }
 
     if (char != '\n') {
-        const glyph = State.text_renderer.glyphs[char];
+        const glyph = State.font_atlas.glyphs[char];
         State.text_renderer.emitInstanceData(
             glyph,
             ds.pen_x,
-            ds.pen_y,
+            pen_y,
             zalg.Vec4.one(),
         );
         ds.pen_x += @floatFromInt(glyph.advance);
@@ -154,26 +172,25 @@ fn drawChar(ds: *DrawingState, char: u8) void {
             State.range_renderer.emitInstanceEnd(ds.pen_x);
         }
 
-        const line_number_slice = std.fmt.bufPrintIntToSlice(&ds.line_number_buffer, ds.current_line, 10, .lower, .{});
-        var ln_index = line_number_slice.len;
-        var ln_pen_x: f32 = 50.0;
-        while (ln_index > 0) {
-            ln_index -= 1;
-            const glyph = State.text_renderer.glyphs[line_number_slice[ln_index]];
-            State.ln_renderer.emitInstanceData(
-                glyph,
-                ln_pen_x,
-                ds.pen_y,
-                zalg.Vec4.one(),
-            );
-            ln_pen_x -= @floatFromInt(glyph.advance);
-        }
-        ds.current_line += 1;
-
+        // const line_number_slice = std.fmt.bufPrintIntToSlice(&ds.line_number_buffer, ds.current_line, 10, .lower, .{});
+        // var ln_index = line_number_slice.len;
+        // var ln_pen_x: f32 = 50.0;
+        // while (ln_index > 0) {
+        //     ln_index -= 1;
+        //     const glyph = State.font_atlas.glyphs[line_number_slice[ln_index]];
+        //     State.ln_renderer.emitInstanceData(
+        //         glyph,
+        //         ln_pen_x,
+        //         pen_y,
+        //         zalg.Vec4.one(),
+        //     );
+        //     ln_pen_x -= @floatFromInt(glyph.advance);
+        // }
+        // ds.current_line += 1;
+        //
         ds.pen_x = 80;
-        ds.pen_y += State.row_height;
         if (ds.drawing_range) {
-            State.range_renderer.emitInstanceStart(ds.pen_x, ds.pen_y + State.font_descender);
+            State.range_renderer.emitInstanceStart(ds.pen_x, pen_y + State.font_descender);
         }
     }
 
@@ -183,36 +200,64 @@ fn drawChar(ds: *DrawingState, char: u8) void {
 export fn frame() void {
     State.delta_time = @floatCast(sapp.frameDuration());
 
+    // std.debug.print("current line: {}\n", .{State.buffer.current_line});
+
     var drawing_state = DrawingState{};
 
     State.range_renderer.setupDraw();
     State.text_renderer.setupDraw();
     State.ln_renderer.setupDraw();
 
-    for (State.buffer.getBeforeGap()) |char| {
-        drawChar(&drawing_state, char);
-    }
+    State.viewport.width = sapp.widthf();
+    State.viewport.height = sapp.heightf();
+    State.viewport.update();
+
+    const top_line: usize = @intFromFloat(@max(0, @floor(State.viewport.position.y() / State.row_height) - 5));
+    const bottom_line: usize = @min(top_line + @as(usize, @intFromFloat(@ceil(State.viewport.height / State.row_height))) + 10, State.buffer.line_count);
 
     drawing_state.cursor_x = drawing_state.pen_x;
-    drawing_state.cursor_y = drawing_state.pen_y;
+    drawing_state.cursor_y = 0;
 
-    if (drawing_state.drawing_range) {
-        State.range_renderer.emitInstanceEnd(State.cursor.position.x() + State.cursor_nwidth);
-        drawing_state.drawing_range = false;
-    }
+    for (top_line..bottom_line) |line_index| {
+        const line_number_slice = std.fmt.bufPrintIntToSlice(&drawing_state.line_number_buffer, line_index + 1, 10, .lower, .{});
+        var ln_index = line_number_slice.len;
+        var ln_pen_x: f32 = 50.0;
+        while (ln_index > 0) {
+            ln_index -= 1;
+            const glyph = State.font_atlas.glyphs[line_number_slice[ln_index]];
+            State.ln_renderer.emitInstanceData(
+                glyph,
+                ln_pen_x,
+                @as(f32, @floatFromInt(line_index)) * State.row_height,
+                zalg.Vec4.one(),
+            );
+            ln_pen_x -= @floatFromInt(glyph.advance);
+        }
 
-    for (State.buffer.getAfterGap()) |char| {
-        drawChar(&drawing_state, char);
+        var char_index: usize = State.buffer.line_offsets[line_index];
+        drawing_state.line_index = line_index;
+
+        while (char_index < State.buffer.data.len - State.buffer.getGapLength()) : (char_index += 1) {
+            const buffer_index = State.buffer.toBufferIndex(char_index);
+            if (char_index == State.buffer.toCharIndex(State.buffer.gap_start)) {
+                drawing_state.cursor_x = drawing_state.pen_x;
+                drawing_state.cursor_y = @as(f32, @floatFromInt(line_index)) * State.row_height;
+                if (drawing_state.drawing_range) {
+                    State.range_renderer.emitInstanceEnd(State.cursor.position.x() + State.cursor_nwidth);
+                    drawing_state.drawing_range = false;
+                }
+            }
+            drawChar(&drawing_state, State.buffer.data[buffer_index]);
+            if (State.buffer.data[buffer_index] == '\n') {
+                break;
+            }
+        }
     }
 
     if (drawing_state.drawing_range) {
         State.range_renderer.emitInstanceEnd(drawing_state.pen_x);
         drawing_state.drawing_range = false;
     }
-
-    State.viewport.width = sapp.widthf();
-    State.viewport.height = sapp.heightf();
-    State.viewport.update();
 
     const current_line_y = @as(f32, @floatFromInt(State.buffer.current_line)) * State.row_height;
     if (current_line_y - State.row_height < State.viewport.position.y() + 3 * State.row_height) {
@@ -360,10 +405,8 @@ pub fn main() !void {
         std.debug.print("file size: {}\n", .{file_stats.size});
         const buffer_size = if (file_stats.size == 0) Buffer.INITIAL_BUFFER_SIZE else try std.math.ceilPowerOfTwo(usize, @intCast(file_stats.size + Buffer.INITIAL_BUFFER_SIZE));
         State.buffer = try Buffer.initFromFile(@ptrCast(file_path), file_stats.size, buffer_size, allocator);
-        State.text_renderer = try TextRenderer.init(buffer_size, allocator);
     } else {
         State.buffer = try Buffer.init(Buffer.INITIAL_BUFFER_SIZE, allocator);
-        State.text_renderer = try TextRenderer.init(Buffer.INITIAL_BUFFER_SIZE, allocator);
     }
 
     args.deinit();

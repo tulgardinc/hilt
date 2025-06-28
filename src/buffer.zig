@@ -5,12 +5,14 @@ pub const INITIAL_BUFFER_SIZE = 4096;
 allocator: std.mem.Allocator,
 
 data: []u8,
-current_line: usize,
 gap_start: usize,
 gap_end: usize,
 range_start: ?usize = null,
 range_end: usize = 0,
 desired_offset: usize = 0,
+line_offsets: [4096]u32 = .{0} ** 4096,
+line_count: usize = 0,
+current_line: usize,
 
 const Self = @This();
 
@@ -29,13 +31,25 @@ pub fn initFromFile(file_path: []const u8, file_size: usize, buffer_size: usize,
     const content_buffer = try allocator.alloc(u8, buffer_size);
     _ = try cwd.readFile(file_path, content_buffer[buffer_size - file_size ..]);
 
-    return .{
+    var buffer: Self = .{
         .data = content_buffer,
         .gap_start = 0,
         .gap_end = buffer_size - file_size,
         .allocator = allocator,
         .current_line = 1,
     };
+
+    var start: u32 = 0;
+    for (content_buffer[buffer_size - file_size ..], 0..) |c, i| {
+        if (c == '\n') {
+            buffer.line_offsets[buffer.line_count] = start;
+            std.debug.print("line {}, offset: {}\n", .{ buffer.line_count, start });
+            start = @intCast(i + 1);
+            buffer.line_count += 1;
+        }
+    }
+
+    return buffer;
 }
 
 pub fn deinit(self: *Self) void {
@@ -70,6 +84,8 @@ pub fn addChar(self: *Self, char: u8) !void {
 
     self.data[self.gap_start] = char;
     self.gap_start += 1;
+
+    self.updateLineOffsets(self.current_line - 1, 1);
 }
 
 pub fn addString(self: *Self, chars: []const u8) !void {
@@ -77,57 +93,68 @@ pub fn addString(self: *Self, chars: []const u8) !void {
 
     std.mem.copyForwards(u8, self.data[self.gap_start .. self.gap_start + chars.len], chars);
     self.gap_start += chars.len;
+
+    self.updateLineOffsets(self.current_line, chars.len);
+}
+
+fn updateLineOffsets(self: *Self, start_line_index: usize, delta: i32) void {
+    if (delta == 0) return;
+    // var index = start_line_index + 1;
+    // while (index < self.line_count) {
+    //     if (delta > 0) {
+    //         self.line_offsets[index] += @as(u32, @intCast(delta));
+    //     } else {
+    //         self.line_offsets[index] -= @as(u32, @intCast(@abs(delta)));
+    //     }
+    //     index += 1;
+    // }
+
+    var line_count: usize = if (start_line_index == 0) 0 else start_line_index - 1;
+    var char_index: usize = self.line_offsets[line_count];
+    var start: u32 = @intCast(char_index);
+    while (char_index < self.data.len - self.getGapLength()) : (char_index += 1) {
+        const c = self.data[self.toBufferIndex(char_index)];
+        if (c == '\n') {
+            self.line_offsets[line_count] = start;
+            start = @intCast(char_index + 1);
+            line_count += 1;
+        }
+    }
+    self.line_count = line_count;
 }
 
 pub fn deleteCharsLeft(self: *Self, amount: usize) !void {
-    if (self.gap_start - amount <= 0) return error.NoCharacterToRemove;
+    if (self.gap_start <= amount) return error.NoCharacterToRemove;
 
     self.gap_start -= amount;
+
+    self.updateCurrentLine();
+    self.updateLineOffsets(self.current_line - 1, -@as(i32, @intCast(amount)));
 }
 
 pub fn deleteCharsRight(self: *Self, amount: usize) !void {
     if (self.gap_end + amount == self.data.len) return error.NoCharacterToRemove;
 
     self.gap_end += amount;
+
+    self.updateCurrentLine();
+    self.updateLineOffsets(self.current_line - 1, -@as(i32, @intCast(amount)));
 }
 
-pub fn getLineStart(self: *const Self, buffer_index: usize) usize {
-    var i: usize = buffer_index;
-    while (i > 0) {
-        i -= 1;
-        if (i == self.gap_end) {
-            i = self.gap_start;
-            continue;
-        }
-
-        if (self.data[i] == '\n') {
-            i += 1;
-            break;
-        }
-    }
-    return i;
+pub fn getLineStart(self: *const Self) usize {
+    return self.line_offsets[self.current_line - 1];
 }
 
-pub fn getLineEnd(self: *const Self, buffer_index: usize) usize {
-    var i: usize = buffer_index;
-    while (i < self.data.len) {
-        if (i == self.gap_start) {
-            i = self.gap_end;
-            continue;
-        }
-
-        if (self.data[i] == '\n') {
-            break;
-        }
-        i += 1;
+pub fn getLineEnd(self: *const Self) usize {
+    if (self.current_line + 1 < self.line_count) {
+        return self.line_offsets[self.current_line] - 1;
     }
-    return i;
 }
 
 //pub fn getLineStartWithChar
 
 pub fn getCurrentLineOffset(self: *const Self) usize {
-    return self.gap_start - self.getLineStart(self.gap_start);
+    return self.gap_start - self.getLineStart();
 }
 
 pub fn moveGap(self: *Self, buffer_index: usize) !void {

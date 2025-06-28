@@ -1,6 +1,6 @@
 const std = @import("std");
 const State = @import("main.zig").State;
-const Glyph = @import("text_renderer.zig").Glyph;
+const Glyph = @import("font_atlas.zig").Glyph;
 
 const ft = @import("mach-freetype");
 const sg = @import("sokol").gfx;
