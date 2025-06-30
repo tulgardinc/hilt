@@ -10,7 +10,7 @@ gap_end: usize,
 range_start: ?usize = null,
 range_end: usize = 0,
 desired_offset: usize = 0,
-line_offsets: [4096]u32 = .{0} ** 4096,
+line_offsets: [65536]u32 = .{0} ** 65536,
 line_count: usize = 0,
 current_line: usize,
 
@@ -43,7 +43,7 @@ pub fn initFromFile(file_path: []const u8, file_size: usize, buffer_size: usize,
     for (content_buffer[buffer_size - file_size ..], 0..) |c, i| {
         if (c == '\n') {
             buffer.line_offsets[buffer.line_count] = start;
-            std.debug.print("line {}, offset: {}\n", .{ buffer.line_count, start });
+            // std.debug.print("line {}, offset: {}\n", .{ buffer.line_count, start });
             start = @intCast(i + 1);
             buffer.line_count += 1;
         }
@@ -157,7 +157,7 @@ pub fn moveGap(self: *Self, buffer_index: usize) !void {
             if (buffer_index < self.toBufferIndex(self.range_end)) {
                 self.range_start = self.toCharIndex(buffer_index);
             } else if (buffer_index > self.toBufferIndex(self.range_end)) {
-                self.range_start = self.range_end;
+                self.range_start = self.range_end - 1;
                 self.range_end = self.toCharIndex(buffer_index);
             }
         } else if (self.range_end == self.toCharIndex(self.gap_end)) {
@@ -290,9 +290,7 @@ pub fn deleteRange(self: *Self) !void {
 
     self.setGapStart(self.range_start.?);
 
-    if (range_end_idx > self.gap_end) {
-        self.gap_end = range_end_idx;
-    }
+    self.gap_end = range_end_idx + 1;
 
     self.updateCurrentLine();
     self.updateLineOffsets(self.current_line - 1);

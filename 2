@@ -119,6 +119,7 @@ export fn init() void {
 const DrawingState = struct {
     const INITIAL_PEN_X = 80.0;
 
+    line_index: usize = 0,
     pen_x: f32 = INITIAL_PEN_X,
 
     line_number_buffer: [16]u8 = undefined,
@@ -127,18 +128,17 @@ const DrawingState = struct {
     cursor_x: f32 = 0.0,
     cursor_y: f32 = 100.0,
 
+    char_index: usize = 0,
     vertex_index: usize = 0,
 
     drawing_range: bool = false,
 };
 
-fn drawChar(ds: *DrawingState, char_index: usize, line_index: usize) void {
-    const pen_y = @as(f32, @floatFromInt(line_index)) * State.row_height;
-    const char = State.buffer.data[State.buffer.toBufferIndex(char_index)];
+fn drawChar(ds: *DrawingState, char: u8) void {
+    const pen_y = @as(f32, @floatFromInt(ds.line_index)) * State.row_height;
 
     if (State.buffer.range_start) |range_start| {
-        if (char_index == range_start) {
-            std.debug.print("start on {c}\n", .{State.buffer.data[State.buffer.toBufferIndex(char_index)]});
+        if (ds.char_index == range_start) {
             ds.drawing_range = true;
             if (range_start == State.buffer.gap_start) {
                 State.range_renderer.emitInstanceStart(State.cursor.position.x() + State.cursor_nwidth, pen_y + State.font_descender);
@@ -149,7 +149,7 @@ fn drawChar(ds: *DrawingState, char_index: usize, line_index: usize) void {
     }
 
     if (ds.drawing_range) {
-        if (char_index == State.buffer.range_end) {
+        if (ds.char_index == State.buffer.range_end) {
             ds.drawing_range = false;
             if (State.buffer.range_end == State.buffer.toCharIndex(State.buffer.gap_end)) {
                 State.range_renderer.emitInstanceEnd(State.cursor.position.x() + State.cursor_nwidth);
@@ -181,10 +181,14 @@ fn drawChar(ds: *DrawingState, char_index: usize, line_index: usize) void {
             State.range_renderer.emitInstanceStart(ds.pen_x, pen_y + State.row_height + State.font_descender);
         }
     }
+
+    ds.char_index += 1;
 }
 
 export fn frame() void {
     State.delta_time = @floatCast(sapp.frameDuration());
+
+    // std.debug.print("current line: {}\n", .{State.buffer.current_line});
 
     var drawing_state = DrawingState{};
 
@@ -203,9 +207,9 @@ export fn frame() void {
     drawing_state.cursor_y = 0;
 
     if (State.buffer.range_start) |range_start| {
-        if (State.buffer.line_offsets[top_line] > range_start) {
-            drawing_state.drawing_range = true;
+        if (State.buffer.toCharIndex(State.buffer.line_offsets[top_line]) > range_start) {
             std.debug.print("LINE BEHIND\n", .{});
+            drawing_state.drawing_range = true;
         }
     }
 
@@ -226,6 +230,7 @@ export fn frame() void {
         }
 
         var char_index: usize = State.buffer.line_offsets[line_index];
+        drawing_state.line_index = line_index;
 
         while (char_index < State.buffer.data.len - State.buffer.getGapLength()) : (char_index += 1) {
             const buffer_index = State.buffer.toBufferIndex(char_index);
@@ -237,7 +242,7 @@ export fn frame() void {
                 //     drawing_state.drawing_range = false;
                 // }
             }
-            drawChar(&drawing_state, char_index, line_index);
+            drawChar(&drawing_state, State.buffer.data[buffer_index]);
             if (State.buffer.data[buffer_index] == '\n') {
                 break;
             }

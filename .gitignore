@@ -2,3 +2,4 @@
 zig-out/
 src/shaders/compiled/
 *.log
+*.txt
