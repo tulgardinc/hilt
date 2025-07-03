@@ -124,9 +124,6 @@ const DrawingState = struct {
     line_number_buffer: [16]u8 = undefined,
     current_line: usize = 1,
 
-    cursor_x: f32 = 0.0,
-    cursor_y: f32 = 100.0,
-
     vertex_index: usize = 0,
 
     drawing_range: bool = false,
@@ -198,9 +195,6 @@ export fn frame() void {
     const top_line: usize = @intFromFloat(@max(0, @floor(State.viewport.position.y() / State.row_height) - 5));
     const bottom_line: usize = @min(top_line + @as(usize, @intFromFloat(@ceil(State.viewport.height / State.row_height))) + 10, State.buffer.getLineCount());
 
-    drawing_state.cursor_x = drawing_state.pen_x;
-    drawing_state.cursor_y = 0;
-
     const top_line_start_char_index = State.buffer.getLineStart(top_line);
 
     if (State.buffer.range_start) |range_start| {
@@ -231,14 +225,6 @@ export fn frame() void {
 
         while (char_index < State.buffer.data.len - State.buffer.getGapLength()) : (char_index += 1) {
             const buffer_index = State.buffer.toBufferIndex(char_index);
-            if (char_index == State.buffer.toCharIndex(State.buffer.gap_start)) {
-                drawing_state.cursor_x = drawing_state.pen_x;
-                drawing_state.cursor_y = @as(f32, @floatFromInt(line_index)) * State.row_height;
-                // if (drawing_state.drawing_range) {
-                //     State.range_renderer.emitInstanceEnd(State.cursor.position.x() + State.cursor_nwidth);
-                //     drawing_state.drawing_range = false;
-                // }
-            }
             drawChar(&drawing_state, char_index, line_index);
             if (State.buffer.data[buffer_index] == '\n') {
                 break;
@@ -278,7 +264,11 @@ export fn frame() void {
     const cursor_width: f32 = if (State.mode == .normal or State.mode == .visual) State.cursor_nwidth else 2.0;
     const cursor_x_offset: f32 = if (State.mode == .normal or State.mode == .visual) State.cursor_nchar_x_offset else 0.0;
 
-    State.cursor.target_position = zalg.Vec2.new(drawing_state.cursor_x + cursor_x_offset, drawing_state.cursor_y + @abs(State.font_descender));
+    var cursor_x: f32 = DrawingState.INITIAL_PEN_X;
+    for (State.buffer.data[State.buffer.getLineStart(State.buffer.current_line - 1)..State.buffer.gap_start]) |c| {
+        cursor_x += @floatFromInt(State.font_atlas.glyphs[c].advance);
+    }
+    State.cursor.target_position = zalg.Vec2.new(cursor_x + cursor_x_offset, @as(f32, @floatFromInt(State.buffer.current_line - 1)) * State.row_height + @abs(State.font_descender));
     State.cursor.update();
 
     const cursor_center = zalg.Mat4.identity().translate(zalg.Vec3.new(-0.5, 0.5, 0));

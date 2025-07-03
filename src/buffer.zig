@@ -74,7 +74,7 @@ pub fn getLineCount(self: *const Self) usize {
 
 pub fn getLineStart(self: *const Self, line_index: usize) usize {
     const cache_line = @divFloor(line_index, 4000);
-    const start_index = line_index % 4000;
+    const start_index = cache_line * 4000;
 
     var start_sum: usize = 0;
     if (cache_line > 0 and self.line_length_cache.items.len > cache_line) {
@@ -83,7 +83,7 @@ pub fn getLineStart(self: *const Self, line_index: usize) usize {
 
     const vector_len = std.simd.suggestVectorLength(u8) orelse 16;
 
-    if (self.line_lengths.items.len < vector_len) {
+    if (line_index < vector_len) {
         var line_start: usize = 0;
         for (self.line_lengths.items[0..line_index]) |line_length| {
             line_start += line_length;
@@ -167,9 +167,7 @@ pub fn deleteCharsLeft(self: *Self, amount: usize) !void {
     const prev_line_index = self.current_line - 1;
     const prev_gap_start = self.gap_start;
 
-    std.debug.print("gap start: {}\n", .{self.gap_start});
     self.gap_start -= amount;
-    std.debug.print("gap start: {}\n", .{self.gap_start});
     self.updateCurrentLine();
 
     const curr_line_index = self.current_line - 1;
@@ -183,12 +181,10 @@ pub fn deleteCharsLeft(self: *Self, amount: usize) !void {
         self.line_lengths.items[line_index] -= 1;
         if (self.data[buffer_index] == '\n') {
             line_index += 1;
-            std.debug.print("deleting from line: {}\n", .{line_index});
         }
     }
 
     if (deleted_line_count > 0) {
-        std.debug.print("delete multiline\n", .{});
         self.line_lengths.items[curr_line_index] += self.line_lengths.items[prev_line_index];
         std.mem.copyForwards(
             usize,
@@ -197,11 +193,6 @@ pub fn deleteCharsLeft(self: *Self, amount: usize) !void {
         );
         try self.line_lengths.resize(self.line_lengths.items.len - deleted_line_count);
     }
-
-    for (self.line_lengths.items, 0..) |l, i| {
-        std.debug.print("line {}: {}\n", .{ i, l });
-    }
-    std.debug.print("\n", .{});
 }
 
 pub fn deleteCharsRight(self: *Self, amount: usize) !void {
@@ -215,11 +206,9 @@ pub fn deleteCharsRight(self: *Self, amount: usize) !void {
     var buffer_index = prev_gap_end;
     var line_index = curr_line_index;
     while (buffer_index < self.gap_end) : (buffer_index += 1) {
-        std.debug.print("line length: {}\n", .{self.line_lengths.items[line_index]});
         self.line_lengths.items[line_index] -= 1;
         if (self.data[buffer_index] == '\n') {
             line_index += 1;
-            std.debug.print("deleting from line: {}\n", .{line_index});
         }
     }
 
@@ -235,11 +224,6 @@ pub fn deleteCharsRight(self: *Self, amount: usize) !void {
         );
         try self.line_lengths.resize(self.line_lengths.items.len - deleted_line_count);
     }
-
-    for (self.line_lengths.items, 0..) |l, i| {
-        std.debug.print("line {}: {}\n", .{ i, l });
-    }
-    std.debug.print("\n", .{});
 }
 
 pub fn getCurrentLineOffsetFromEnd(self: *const Self) usize {
@@ -333,35 +317,6 @@ pub fn clearRange(self: *Self) void {
     self.range_start = null;
 }
 
-/// Returns buffer index of the begining of a line
-/// Starts search from current line
-pub fn getLine(self: *const Self, target_line_number: usize) usize {
-    if (target_line_number < self.current_line) {
-        var i = self.gap_start;
-        var current_line = self.current_line;
-        while (i > 0) {
-            i -= 1;
-            if (self.data[i] == '\n') {
-                if (current_line == target_line_number) {
-                    return i + 1;
-                } else {
-                    current_line -= 1;
-                }
-            }
-        }
-        return i;
-    } else {
-        var i = self.gap_end;
-        var current_line = self.current_line;
-        while (current_line != target_line_number and i < self.data.len) : (i += 1) {
-            if (self.data[i] == '\n') {
-                current_line += 1;
-            }
-        }
-        return i;
-    }
-}
-
 pub fn getDesiredOffsetOnLine(self: *const Self, line_start_index: usize) usize {
     var i: usize = line_start_index;
     while (i < line_start_index + self.desired_offset and i < self.data.len) : (i += 1) {
@@ -374,16 +329,16 @@ pub fn getDesiredOffsetOnLine(self: *const Self, line_start_index: usize) usize 
 
 pub fn moveGapUpByLine(self: *Self) !void {
     if (self.current_line == 0) return;
-    const line_start = self.getLine(self.current_line - 1);
-    const desired = self.getDesiredOffsetOnLine(line_start);
-    try self.moveGap(desired);
+    const line_start = self.getLineStart(self.current_line - 2);
+    const desired = line_start + self.desired_offset;
+    try self.moveGap(self.toBufferIndex(desired));
 }
 
 pub fn moveGapDownByLine(self: *Self) !void {
     if (self.gap_end == self.data.len) return;
-    const line_start = self.getLine(self.current_line + 1);
-    const desired = self.getDesiredOffsetOnLine(line_start);
-    try self.moveGap(desired);
+    const line_start = self.getLineStart(self.current_line);
+    const desired = line_start + self.desired_offset;
+    try self.moveGap(self.toBufferIndex(desired));
 }
 
 // === RANGE ===
@@ -393,7 +348,6 @@ pub fn deleteRange(self: *Self) !void {
     if (!self.hasRange()) return error.NoRange;
 
     if (self.range_start.? < self.gap_start) {
-        std.debug.print("range len: {}\n", .{self.getRangeLength()});
         try self.deleteCharsLeft(self.getRangeLength());
     } else {
         try self.deleteCharsRight(self.getRangeLength());

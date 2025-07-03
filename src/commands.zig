@@ -88,7 +88,7 @@ pub fn upByHalf() void {
         return;
     }
     const target_line_number = State.buffer.current_line - row_count;
-    const line_start = State.buffer.getLine(target_line_number);
+    const line_start = State.buffer.getLineStart(target_line_number);
     const desired = State.buffer.getDesiredOffsetOnLine(line_start);
     State.buffer.moveGap(desired) catch undefined;
     var pos: zalg.Vec2 = State.viewport.position;
@@ -102,7 +102,7 @@ pub fn downByHalf() void {
     const relative_dist: f32 = @as(f32, @floatFromInt(State.buffer.current_line)) * State.row_height - viewport_desired_position.y();
     const row_count: usize = @as(usize, @intFromFloat(half_height)) / @as(usize, @intFromFloat(State.row_height));
     const target_line_number = State.buffer.current_line + row_count;
-    const line_start = State.buffer.toBufferIndex(State.buffer.getLine(target_line_number));
+    const line_start = State.buffer.toBufferIndex(State.buffer.getLineStart(target_line_number));
     const desired = State.buffer.getDesiredOffsetOnLine(line_start);
     // TODO: inefficient
     if (State.buffer.toBufferIndex(State.buffer.getLineStart(desired)) != line_start) {
