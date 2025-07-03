@@ -33,4 +33,5 @@ pub fn setDefaultBinds(command_handler: *CommandHandler) !void {
 
     try command_handler.addCommand("<escape>", &.{.insert}, Commands.switchToNormalMode);
     try command_handler.addCommand("<backspace>", &.{.insert}, Commands.deleteLeft);
+    try command_handler.addCommand("<enter>", &.{.insert}, Commands.breakLine);
 }

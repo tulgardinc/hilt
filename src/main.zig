@@ -138,7 +138,6 @@ fn drawChar(ds: *DrawingState, char_index: usize, line_index: usize) void {
 
     if (State.buffer.range_start) |range_start| {
         if (char_index == range_start) {
-            std.debug.print("start on {c}\n", .{State.buffer.data[State.buffer.toBufferIndex(char_index)]});
             ds.drawing_range = true;
             if (range_start == State.buffer.gap_start) {
                 State.range_renderer.emitInstanceStart(State.cursor.position.x() + State.cursor_nwidth, pen_y + State.font_descender);
@@ -197,18 +196,21 @@ export fn frame() void {
     State.viewport.update();
 
     const top_line: usize = @intFromFloat(@max(0, @floor(State.viewport.position.y() / State.row_height) - 5));
-    const bottom_line: usize = @min(top_line + @as(usize, @intFromFloat(@ceil(State.viewport.height / State.row_height))) + 10, State.buffer.line_count);
+    const bottom_line: usize = @min(top_line + @as(usize, @intFromFloat(@ceil(State.viewport.height / State.row_height))) + 10, State.buffer.getLineCount());
 
     drawing_state.cursor_x = drawing_state.pen_x;
     drawing_state.cursor_y = 0;
 
+    const top_line_start_char_index = State.buffer.getLineStart(top_line);
+
     if (State.buffer.range_start) |range_start| {
-        if (State.buffer.line_offsets[top_line] > range_start) {
+        if (top_line_start_char_index > range_start) {
             drawing_state.drawing_range = true;
             std.debug.print("LINE BEHIND\n", .{});
         }
     }
 
+    var line_start_index: usize = top_line_start_char_index;
     for (top_line..bottom_line) |line_index| {
         const line_number_slice = std.fmt.bufPrintIntToSlice(&drawing_state.line_number_buffer, line_index + 1, 10, .lower, .{});
         var ln_index = line_number_slice.len;
@@ -225,7 +227,7 @@ export fn frame() void {
             ln_pen_x -= @floatFromInt(glyph.advance);
         }
 
-        var char_index: usize = State.buffer.line_offsets[line_index];
+        var char_index: usize = line_start_index;
 
         while (char_index < State.buffer.data.len - State.buffer.getGapLength()) : (char_index += 1) {
             const buffer_index = State.buffer.toBufferIndex(char_index);
@@ -242,6 +244,8 @@ export fn frame() void {
                 break;
             }
         }
+
+        line_start_index += State.buffer.line_lengths.items[line_index];
     }
 
     if (drawing_state.drawing_range) {

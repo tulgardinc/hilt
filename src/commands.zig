@@ -102,11 +102,11 @@ pub fn downByHalf() void {
     const relative_dist: f32 = @as(f32, @floatFromInt(State.buffer.current_line)) * State.row_height - viewport_desired_position.y();
     const row_count: usize = @as(usize, @intFromFloat(half_height)) / @as(usize, @intFromFloat(State.row_height));
     const target_line_number = State.buffer.current_line + row_count;
-    const line_start = State.buffer.getLine(target_line_number);
+    const line_start = State.buffer.toBufferIndex(State.buffer.getLine(target_line_number));
     const desired = State.buffer.getDesiredOffsetOnLine(line_start);
     // TODO: inefficient
-    if (State.buffer.getLine(desired) != line_start) {
-        State.buffer.moveGap(desired) catch undefined;
+    if (State.buffer.toBufferIndex(State.buffer.getLineStart(desired)) != line_start) {
+        State.buffer.moveGap(desired) catch unreachable;
         var pos: zalg.Vec2 = State.viewport.position;
         pos.yMut().* = @as(f32, @floatFromInt(target_line_number)) * State.row_height - relative_dist;
         State.viewport.setPosition(pos);
@@ -193,5 +193,11 @@ pub fn moveWordEndRight() void {
 pub fn deleteLeft() void {
     if (State.buffer.getBeforeGap().len > 0) {
         State.buffer.deleteCharsLeft(1) catch unreachable;
+    }
+}
+
+pub fn breakLine() void {
+    if (State.buffer.getBeforeGap().len > 0) {
+        State.buffer.addChar('\n') catch unreachable;
     }
 }
